@@ -18,6 +18,7 @@ from .descriptions_definitions import (
     HCSelectEntityDescription,
     HCSensorEntityDescription,
     HCSwitchEntityDescription,
+    HCTextEntityDescription,
     _EntityDescriptionsType,
 )
 
@@ -70,6 +71,21 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
         # Fallback: check if current value is boolean
         return isinstance(entity_value, bool)
     
+    # Helper function to detect color entities based on schema data types
+    def _is_color_entity(entity_obj) -> bool:
+        # Check if entity has color data type from schema (refCID=1E, refDID=AB)
+        if hasattr(entity_obj, '_uid'):  # Full entity object
+            # Try to access the original description data if available
+            if hasattr(entity_obj, '_appliance') and hasattr(entity_obj._appliance, 'description'):
+                # Look up entity in device description by UID  
+                desc = entity_obj._appliance.description
+                for section in ['status', 'setting', 'command', 'option']:
+                    if section in desc:
+                        for item in desc[section]:
+                            if item.get('uid') == entity_obj._uid:
+                                return (item.get('refCID') == 30 and item.get('refDID') == 171)  # 0x1E=30, 0xAB=171
+        return False
+    
     # Determine entity type based on data characteristics
     
     # Write-only entities -> Buttons (Commands)
@@ -83,23 +99,24 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
     
     # Writable entities -> Interactive controls
     if access in (Access.READ_WRITE, Access.WRITE_ONLY):
-        # Binary enum (Off/On, etc.) -> Switch
-        if has_enum and _is_binary_enum(enum_values):
+        # True boolean entities (refCID=01, refDID=00) -> Switch
+        if _is_boolean_entity(entity):
             return ("switch", HCSwitchEntityDescription(
                 key=key,
                 entity=entity_name,
                 name=display_name,
                 translation_key=key,
             ))
-        # Boolean-like entities -> Switch
-        elif _is_boolean_entity(entity):
-            return ("switch", HCSwitchEntityDescription(
+        # Color entities (refCID=1E, refDID=AB) -> Text input for hex colors
+        elif _is_color_entity(entity):
+            return ("text", HCTextEntityDescription(
                 key=key,
                 entity=entity_name,
                 name=display_name,
                 translation_key=key,
             ))
-        # Multi-option enum -> Select
+        # Any enum (including binary enums like On/Off) -> Select
+        # This ensures enum values (like 1,2 for Off/On) are sent correctly
         elif has_enum:
             return ("select", HCSelectEntityDescription(
                 key=key,
@@ -177,6 +194,7 @@ def get_available_entities(appliance: HomeAppliance) -> EntityDescriptions:
         "wifi": [],
         "light": [],
         "fan": [],
+        "text": [],
     }
     
     # Auto-generate entities from all available entities in the appliance
@@ -201,6 +219,7 @@ __all__ = [
     "HCSelectEntityDescription",
     "HCSensorEntityDescription",
     "HCSwitchEntityDescription",
+    "HCTextEntityDescription",
     "_EntityDescriptionsType",
     "get_available_entities",
 ]
