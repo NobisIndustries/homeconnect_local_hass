@@ -88,14 +88,22 @@ class HCSelect(HCEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         if "ActiveProgram" in self.entity_description.entity:
-            # For ActiveProgram, we need to select and start the program
+            # For ActiveProgram, we start the program (calls /ro/activeProgram)
+            program_id = self._rev_options.get(option, option)
+            if hasattr(self._appliance, 'programs') and program_id in self._appliance.programs:
+                program = self._appliance.programs[program_id]
+                await program.start()
+            else:
+                # Fallback to direct value setting
+                await self._entity.set_value(program_id)
+        elif "SelectedProgram" in self.entity_description.entity:
+            # For SelectedProgram, we select the program (calls /ro/selectedProgram)
             program_id = self._rev_options.get(option, option)
             if hasattr(self._appliance, 'programs') and program_id in self._appliance.programs:
                 program = self._appliance.programs[program_id]
                 await program.select()
-                # Optionally start the program immediately - comment out if not desired
-                # await program.start()
             else:
+                # Fallback to direct value setting
                 await self._entity.set_value(program_id)
         else:
             if self._rev_options:
