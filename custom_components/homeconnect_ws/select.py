@@ -51,6 +51,17 @@ class HCSelect(HCEntity, SelectEntity):
         self._rev_options = {}
         if entity_description.options:
             self._attr_options = entity_description.options
+        elif "ActiveProgram" in entity_description.entity or "SelectedProgram" in entity_description.entity:
+            # For ActiveProgram/SelectedProgram, options come from available programs
+            self._attr_options = []
+            if hasattr(appliance, 'programs') and appliance.programs:
+                for program_id, program in appliance.programs.items():
+                    if hasattr(program, 'name'):
+                        self._attr_options.append(program.name)
+                        self._rev_options[program.name] = program_id
+                    else:
+                        self._attr_options.append(program_id)
+                        self._rev_options[program_id] = program_id
         elif self._entity.enum:
             self._attr_options = []
             if self.entity_description.has_state_translation:
@@ -76,9 +87,20 @@ class HCSelect(HCEntity, SelectEntity):
         return None
 
     async def async_select_option(self, option: str) -> None:
-        if self._rev_options:
-            option = self._rev_options[option]
-        await self._entity.set_value(option)
+        if "ActiveProgram" in self.entity_description.entity:
+            # For ActiveProgram, we need to select and start the program
+            program_id = self._rev_options.get(option, option)
+            if hasattr(self._appliance, 'programs') and program_id in self._appliance.programs:
+                program = self._appliance.programs[program_id]
+                await program.select()
+                # Optionally start the program immediately - comment out if not desired
+                # await program.start()
+            else:
+                await self._entity.set_value(program_id)
+        else:
+            if self._rev_options:
+                option = self._rev_options[option]
+            await self._entity.set_value(option)
 
 
 class HCProgram(HCSelect):
