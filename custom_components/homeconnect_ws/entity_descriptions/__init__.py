@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from homeassistant.components.sensor import SensorDeviceClass
 from homeconnect_websocket.entities import Access
 
 from .descriptions_definitions import (
@@ -25,141 +26,90 @@ if TYPE_CHECKING:
 
 
 def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityDescription] | None:
-    """Create entity description from HomeConnect entity data."""
+    """Create entity description from HomeConnect entity data based purely on entity properties."""
     # Generate a clean key from entity name  
     key = entity_name.lower().replace(".", "_")
+    display_name = entity_name.split(".")[-1]
     
-    # Determine entity type based on name patterns and access
+    # Get entity properties from the actual entity data
     access = getattr(entity, 'access', Access.READ)
+    has_enum = getattr(entity, 'enum', None) is not None
+    entity_value = getattr(entity, 'value', None)
+    has_min_max = hasattr(entity, 'min') or hasattr(entity, 'max')
     
-    # Commands -> Buttons
-    if ".Command." in entity_name:
+    # Determine entity type purely based on data characteristics
+    
+    # Write-only entities with no return value -> Buttons (Commands)
+    if access == Access.WRITE_ONLY and not has_enum and not has_min_max:
         return ("button", HCButtonEntityDescription(
             key=key,
             entity=entity_name,
-            name=entity_name.split(".")[-1],
+            name=display_name,
             translation_key=key,
         ))
     
-    # Programs -> Select (if writable) or Sensor (if read-only)  
-    if ".Program." in entity_name:
-        if access in (Access.READ_WRITE, Access.WRITE_ONLY):
+    # Writable entities -> Interactive controls
+    if access in (Access.READ_WRITE, Access.WRITE_ONLY):
+        # Enum values -> Select
+        if has_enum:
             return ("select", HCSelectEntityDescription(
                 key=key,
                 entity=entity_name,
-                name=entity_name.split(".")[-1],
+                name=display_name,
                 translation_key=key,
             ))
-        else:
-            return ("sensor", HCSensorEntityDescription(
-                key=key,
-                entity=entity_name,
-                name=entity_name.split(".")[-1],
-                translation_key=key,
-            ))
-    
-    # Status -> Sensors (read-only)
-    if ".Status." in entity_name:
-        # Check if it's a boolean-like status for binary sensor
-        if hasattr(entity, 'value') and isinstance(entity.value, bool):
-            return ("binary_sensor", HCBinarySensorEntityDescription(
-                key=key,
-                entity=entity_name,
-                name=entity_name.split(".")[-1],
-                translation_key=key,
-            ))
-        else:
-            return ("sensor", HCSensorEntityDescription(
-                key=key,
-                entity=entity_name,
-                name=entity_name.split(".")[-1],
-                translation_key=key,
-            ))
-    
-    # Settings -> Switches/Selects/Numbers based on type and access
-    if ".Setting." in entity_name:
-        if access in (Access.READ_WRITE, Access.WRITE_ONLY):
-            # Check if it has enumeration values (Select)
-            if hasattr(entity, 'constraints') and hasattr(entity.constraints, 'allowedvalues'):
-                return ("select", HCSelectEntityDescription(
-                    key=key,
-                    entity=entity_name,
-                    name=entity_name.split(".")[-1],
-                    translation_key=key,
-                ))
-            # Check if it's boolean (Switch)
-            elif hasattr(entity, 'value') and isinstance(entity.value, bool):
-                return ("switch", HCSwitchEntityDescription(
-                    key=key,
-                    entity=entity_name,
-                    name=entity_name.split(".")[-1],
-                    translation_key=key,
-                ))
-            # Check if it's numeric (Number)
-            elif hasattr(entity, 'value') and isinstance(entity.value, (int, float)):
-                return ("number", HCNumberEntityDescription(
-                    key=key,
-                    entity=entity_name,
-                    name=entity_name.split(".")[-1],
-                    translation_key=key,
-                ))
-            # Fallback to sensor for writable but unknown types
-            else:
-                return ("sensor", HCSensorEntityDescription(
-                    key=key,
-                    entity=entity_name,
-                    name=entity_name.split(".")[-1],
-                    translation_key=key,
-                ))
-        else:
-            # Read-only settings -> Sensors
-            return ("sensor", HCSensorEntityDescription(
-                key=key,
-                entity=entity_name,
-                name=entity_name.split(".")[-1],
-                translation_key=key,
-            ))
-    
-    # Options -> Numbers or Selects based on type
-    if ".Option." in entity_name:
-        if hasattr(entity, 'constraints') and hasattr(entity.constraints, 'allowedvalues'):
-            return ("select", HCSelectEntityDescription(
-                key=key,
-                entity=entity_name,
-                name=entity_name.split(".")[-1],
-                translation_key=key,
-            ))
-        elif hasattr(entity, 'value') and isinstance(entity.value, (int, float)):
+        # Numeric with constraints -> Number
+        elif has_min_max:
             return ("number", HCNumberEntityDescription(
                 key=key,
                 entity=entity_name,
-                name=entity_name.split(".")[-1],
+                name=display_name,
                 translation_key=key,
             ))
+        # Boolean values -> Switch  
+        elif isinstance(entity_value, bool):
+            return ("switch", HCSwitchEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=display_name,
+                translation_key=key,
+            ))
+        # Fallback writable -> Sensor (shouldn't happen often)
         else:
             return ("sensor", HCSensorEntityDescription(
                 key=key,
                 entity=entity_name,
-                name=entity_name.split(".")[-1],
+                name=display_name,
                 translation_key=key,
             ))
     
-    # Events -> Event Sensors
-    if ".Event." in entity_name:
-        return ("event_sensor", HCSensorEntityDescription(
-            key=key,
-            entity=entity_name,
-            name=entity_name.split(".")[-1],
-            translation_key=key,
-        ))
-    
-    # Default fallback -> Sensor
-    return ("sensor", HCSensorEntityDescription(
-        key=key,
-        entity=entity_name,
-        name=entity_name.split(".")[-1],
-        translation_key=key,
-    ))
+    # Read-only entities -> Sensors or Binary Sensors
+    else:
+        # Boolean status -> Binary Sensor
+        if isinstance(entity_value, bool):
+            return ("binary_sensor", HCBinarySensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=display_name,
+                translation_key=key,
+            ))
+        # Enum values -> Enum Sensor
+        elif has_enum:
+            return ("sensor", HCSensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=display_name,
+                translation_key=key,
+                device_class=SensorDeviceClass.ENUM,
+            ))
+        # Everything else -> Regular Sensor
+        else:
+            return ("sensor", HCSensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=display_name,
+                translation_key=key,
+            ))
 
 
 def get_available_entities(appliance: HomeAppliance) -> EntityDescriptions:
