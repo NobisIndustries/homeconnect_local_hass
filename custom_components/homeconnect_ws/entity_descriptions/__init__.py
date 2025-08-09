@@ -72,8 +72,12 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
         return isinstance(entity_value, bool)
     
     # Helper function to detect color entities based on schema data types
-    def _is_color_entity(entity_obj) -> bool:
-        # Check if entity has color data type from schema (refCID=1E, refDID=AB)
+    def _is_color_entity(entity_obj, entity_name: str) -> bool:
+        # Hardcoded check for CustomColor entities (reliable indicator)
+        if "CustomColor" in entity_name:
+            return True
+            
+        # Schema-based check (fallback)
         if hasattr(entity_obj, '_uid'):  # Full entity object
             # Try to access the original description data if available
             if hasattr(entity_obj, '_appliance') and hasattr(entity_obj._appliance, 'description'):
@@ -99,8 +103,17 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
     
     # Writable entities -> Interactive controls
     if access in (Access.READ_WRITE, Access.WRITE_ONLY):
+        # Special case: ActiveProgram and SelectedProgram always become Select entities
+        # These entities need to send program IDs (like "D80B", "D800") not boolean values
+        if "ActiveProgram" in entity_name or "SelectedProgram" in entity_name:
+            return ("select", HCSelectEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=display_name,
+                translation_key=key,
+            ))
         # True boolean entities (refCID=01, refDID=00) -> Switch
-        if _is_boolean_entity(entity):
+        elif _is_boolean_entity(entity):
             return ("switch", HCSwitchEntityDescription(
                 key=key,
                 entity=entity_name,
@@ -108,7 +121,7 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
                 translation_key=key,
             ))
         # Color entities (refCID=1E, refDID=AB) -> Text input for hex colors
-        elif _is_color_entity(entity):
+        elif _is_color_entity(entity, entity_name):
             return ("text", HCTextEntityDescription(
                 key=key,
                 entity=entity_name,
