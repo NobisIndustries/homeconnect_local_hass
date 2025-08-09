@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from custom_components.homeconnect_ws.helpers import merge_dicts
+from homeconnect_websocket.entities import Access
 
-from .common import COMMON_ENTITY_DESCRIPTIONS
-from .consumer_products import CONSUMER_PRODUCTS_ENTITY_DESCRIPTIONS
-from .cooking import COOKING_ENTITY_DESCRIPTIONS
 from .descriptions_definitions import (
     EntityDescriptions,
     HCBinarySensorEntityDescription,
@@ -20,36 +17,153 @@ from .descriptions_definitions import (
     HCSelectEntityDescription,
     HCSensorEntityDescription,
     HCSwitchEntityDescription,
-    _EntityDescriptionsDefinitionsType,
     _EntityDescriptionsType,
 )
-from .dishcare import DISHCARE_ENTITY_DESCRIPTIONS
-from .laundry_care import LAUNDRY_ENTITY_DESCRIPTIONS
-from .refrigeration import REFRIGERATION_ENTITY_DESCRIPTIONS
 
 if TYPE_CHECKING:
     from homeconnect_websocket import HomeAppliance
 
 
-ALL_ENTITY_DESCRIPTIONS: _EntityDescriptionsDefinitionsType | None = None
-
-
-def get_all_entity_description() -> _EntityDescriptionsDefinitionsType:
-    global ALL_ENTITY_DESCRIPTIONS  # noqa: PLW0603
-    if ALL_ENTITY_DESCRIPTIONS is None:
-        ALL_ENTITY_DESCRIPTIONS = merge_dicts(
-            COMMON_ENTITY_DESCRIPTIONS,
-            CONSUMER_PRODUCTS_ENTITY_DESCRIPTIONS,
-            COOKING_ENTITY_DESCRIPTIONS,
-            DISHCARE_ENTITY_DESCRIPTIONS,
-            LAUNDRY_ENTITY_DESCRIPTIONS,
-            REFRIGERATION_ENTITY_DESCRIPTIONS,
-        )
-    return ALL_ENTITY_DESCRIPTIONS
+def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityDescription] | None:
+    """Create entity description from HomeConnect entity data."""
+    # Generate a clean key from entity name  
+    key = entity_name.lower().replace(".", "_")
+    
+    # Determine entity type based on name patterns and access
+    access = getattr(entity, 'access', Access.READ)
+    
+    # Commands -> Buttons
+    if ".Command." in entity_name:
+        return ("button", HCButtonEntityDescription(
+            key=key,
+            entity=entity_name,
+            name=entity_name.split(".")[-1],
+            translation_key=key,
+        ))
+    
+    # Programs -> Select (if writable) or Sensor (if read-only)  
+    if ".Program." in entity_name:
+        if access in (Access.READ_WRITE, Access.WRITE_ONLY):
+            return ("select", HCSelectEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=entity_name.split(".")[-1],
+                translation_key=key,
+            ))
+        else:
+            return ("sensor", HCSensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=entity_name.split(".")[-1],
+                translation_key=key,
+            ))
+    
+    # Status -> Sensors (read-only)
+    if ".Status." in entity_name:
+        # Check if it's a boolean-like status for binary sensor
+        if hasattr(entity, 'value') and isinstance(entity.value, bool):
+            return ("binary_sensor", HCBinarySensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=entity_name.split(".")[-1],
+                translation_key=key,
+            ))
+        else:
+            return ("sensor", HCSensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=entity_name.split(".")[-1],
+                translation_key=key,
+            ))
+    
+    # Settings -> Switches/Selects/Numbers based on type and access
+    if ".Setting." in entity_name:
+        if access in (Access.READ_WRITE, Access.WRITE_ONLY):
+            # Check if it has enumeration values (Select)
+            if hasattr(entity, 'constraints') and hasattr(entity.constraints, 'allowedvalues'):
+                return ("select", HCSelectEntityDescription(
+                    key=key,
+                    entity=entity_name,
+                    name=entity_name.split(".")[-1],
+                    translation_key=key,
+                ))
+            # Check if it's boolean (Switch)
+            elif hasattr(entity, 'value') and isinstance(entity.value, bool):
+                return ("switch", HCSwitchEntityDescription(
+                    key=key,
+                    entity=entity_name,
+                    name=entity_name.split(".")[-1],
+                    translation_key=key,
+                ))
+            # Check if it's numeric (Number)
+            elif hasattr(entity, 'value') and isinstance(entity.value, (int, float)):
+                return ("number", HCNumberEntityDescription(
+                    key=key,
+                    entity=entity_name,
+                    name=entity_name.split(".")[-1],
+                    translation_key=key,
+                ))
+            # Fallback to sensor for writable but unknown types
+            else:
+                return ("sensor", HCSensorEntityDescription(
+                    key=key,
+                    entity=entity_name,
+                    name=entity_name.split(".")[-1],
+                    translation_key=key,
+                ))
+        else:
+            # Read-only settings -> Sensors
+            return ("sensor", HCSensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=entity_name.split(".")[-1],
+                translation_key=key,
+            ))
+    
+    # Options -> Numbers or Selects based on type
+    if ".Option." in entity_name:
+        if hasattr(entity, 'constraints') and hasattr(entity.constraints, 'allowedvalues'):
+            return ("select", HCSelectEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=entity_name.split(".")[-1],
+                translation_key=key,
+            ))
+        elif hasattr(entity, 'value') and isinstance(entity.value, (int, float)):
+            return ("number", HCNumberEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=entity_name.split(".")[-1],
+                translation_key=key,
+            ))
+        else:
+            return ("sensor", HCSensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=entity_name.split(".")[-1],
+                translation_key=key,
+            ))
+    
+    # Events -> Event Sensors
+    if ".Event." in entity_name:
+        return ("event_sensor", HCSensorEntityDescription(
+            key=key,
+            entity=entity_name,
+            name=entity_name.split(".")[-1],
+            translation_key=key,
+        ))
+    
+    # Default fallback -> Sensor
+    return ("sensor", HCSensorEntityDescription(
+        key=key,
+        entity=entity_name,
+        name=entity_name.split(".")[-1],
+        translation_key=key,
+    ))
 
 
 def get_available_entities(appliance: HomeAppliance) -> EntityDescriptions:
-    """Get all available Entity descriptions."""
+    """Get all available Entity descriptions - auto-generated from profile."""
     available_entities: _EntityDescriptionsType = {
         "button": [],
         "active_program": [],
@@ -65,33 +179,21 @@ def get_available_entities(appliance: HomeAppliance) -> EntityDescriptions:
         "light": [],
         "fan": [],
     }
-    appliance_entities = set(appliance.entities)
-    for description_type, descriptions in get_all_entity_description().items():
-        # dynamic descriptions
-        if description_type == "dynamic":
-            for descriptions_fn in descriptions:
-                dynamic_descriptions: _EntityDescriptionsType = descriptions_fn(appliance)
-                for key, value in dynamic_descriptions.items():
-                    available_entities[key].extend(value)
-            continue
-        for description in descriptions:
-            if callable(description):
-                if dynamic_description := description(appliance):
-                    available_entities[description_type].append(dynamic_description)
-            else:
-                all_subscribed_entities = set()
-                if description.entity:
-                    all_subscribed_entities.add(description.entity)
-                if description.entities:
-                    all_subscribed_entities.update(description.entities)
-                if appliance_entities.issuperset(all_subscribed_entities):
-                    available_entities[description_type].append(description)
+    
+    # Auto-generate entities from all available entities in the appliance
+    for entity_name in appliance.entities:
+        entity = appliance.entities[entity_name]
+        entity_description = _create_entity_description(entity_name, entity)
+        if entity_description:
+            entity_type, description = entity_description
+            available_entities[entity_type].append(description)
+    
     return available_entities
 
 
 __all__ = [
     "EntityDescriptions",
-    "HCBinarySensorEntityDescription",
+    "HCBinarySensorEntityDescription", 
     "HCButtonEntityDescription",
     "HCEntityDescription",
     "HCFanEntityDescription",

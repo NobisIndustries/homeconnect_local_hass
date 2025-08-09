@@ -2,6 +2,8 @@
 
 The **Home Connect Local** allows users to integrate their home appliances supporting the  [Home Connect](https://www.home-connect.com/global) standard for Bosch and Siemens using direct communication over the local network.
 
+**Important**: This is a fork of the [original repo](https://github.com/chris-mc1/homeconnect_local_hass) which ditches the curated entity approach and just automatically exposes all entities available in the given profiles.
+
 ## Install the Integration
 
 1. Go to the HACS -> Custom Repositories and add this repository as a Custom Repository [See HACS Documentation for help](https://hacs.xyz/docs/faq/custom_repositories/)
