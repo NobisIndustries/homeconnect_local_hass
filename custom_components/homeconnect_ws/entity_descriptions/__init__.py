@@ -36,11 +36,44 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
     has_enum = getattr(entity, 'enum', None) is not None
     entity_value = getattr(entity, 'value', None)
     has_min_max = hasattr(entity, 'min') or hasattr(entity, 'max')
+    enum_values = getattr(entity, 'enum', {}) if has_enum else {}
     
-    # Determine entity type purely based on data characteristics
+    # Helper function to detect if enum represents a binary on/off state
+    def _is_binary_enum(enum_dict: dict) -> bool:
+        if len(enum_dict) != 2:
+            return False
+        values = list(enum_dict.values())
+        # Check for common binary patterns
+        binary_patterns = [
+            {'Off', 'On'},
+            {'False', 'True'}, 
+            {'Inactive', 'Active'},
+            {'Disabled', 'Enabled'},
+        ]
+        value_set = set(values)
+        return any(value_set == pattern for pattern in binary_patterns)
     
-    # Write-only entities with no return value -> Buttons (Commands)
-    if access == Access.WRITE_ONLY and not has_enum and not has_min_max:
+    # Helper function to detect boolean entities based on schema data types
+    def _is_boolean_entity(entity_obj) -> bool:
+        # Check if entity has boolean data type from schema (refCID=01, refDID=00)
+        if hasattr(entity_obj, '_uid'):  # Full entity object
+            # Try to access the original description data if available
+            if hasattr(entity_obj, '_appliance') and hasattr(entity_obj._appliance, 'description'):
+                # Look up entity in device description by UID
+                desc = entity_obj._appliance.description
+                for section in ['status', 'setting', 'command', 'option']:
+                    if section in desc:
+                        for item in desc[section]:
+                            if item.get('uid') == entity_obj._uid:
+                                return (item.get('refCID') == 1 and item.get('refDID') == 0)
+        
+        # Fallback: check if current value is boolean
+        return isinstance(entity_value, bool)
+    
+    # Determine entity type based on data characteristics
+    
+    # Write-only entities -> Buttons (Commands)
+    if access == Access.WRITE_ONLY:
         return ("button", HCButtonEntityDescription(
             key=key,
             entity=entity_name,
@@ -50,8 +83,24 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
     
     # Writable entities -> Interactive controls
     if access in (Access.READ_WRITE, Access.WRITE_ONLY):
-        # Enum values -> Select
-        if has_enum:
+        # Binary enum (Off/On, etc.) -> Switch
+        if has_enum and _is_binary_enum(enum_values):
+            return ("switch", HCSwitchEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=display_name,
+                translation_key=key,
+            ))
+        # Boolean-like entities -> Switch
+        elif _is_boolean_entity(entity):
+            return ("switch", HCSwitchEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=display_name,
+                translation_key=key,
+            ))
+        # Multi-option enum -> Select
+        elif has_enum:
             return ("select", HCSelectEntityDescription(
                 key=key,
                 entity=entity_name,
@@ -66,17 +115,9 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
                 name=display_name,
                 translation_key=key,
             ))
-        # Boolean values -> Switch  
-        elif isinstance(entity_value, bool):
-            return ("switch", HCSwitchEntityDescription(
-                key=key,
-                entity=entity_name,
-                name=display_name,
-                translation_key=key,
-            ))
-        # Fallback writable -> Sensor (shouldn't happen often)
+        # Fallback writable -> Switch (assume boolean if no other info)
         else:
-            return ("sensor", HCSensorEntityDescription(
+            return ("switch", HCSwitchEntityDescription(
                 key=key,
                 entity=entity_name,
                 name=display_name,
@@ -85,8 +126,16 @@ def _create_entity_description(entity_name: str, entity) -> tuple[str, HCEntityD
     
     # Read-only entities -> Sensors or Binary Sensors
     else:
+        # Binary enum status -> Binary Sensor  
+        if has_enum and _is_binary_enum(enum_values):
+            return ("binary_sensor", HCBinarySensorEntityDescription(
+                key=key,
+                entity=entity_name,
+                name=display_name,
+                translation_key=key,
+            ))
         # Boolean status -> Binary Sensor
-        if isinstance(entity_value, bool):
+        elif _is_boolean_entity(entity):
             return ("binary_sensor", HCBinarySensorEntityDescription(
                 key=key,
                 entity=entity_name,
