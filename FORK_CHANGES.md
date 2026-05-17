@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.4`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.6`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -168,19 +168,6 @@ nor the secondary entities' `available` flags can take the light offline. Write
 failures are still handled gracefully by `async_turn_on`'s per-payload retry from
 change #2.
 
-### 9. Hood light turn-on always writes the on-payload
-
-**Files:** `light.py`
-
-`HCLight.async_turn_on` was guarding the `Cooking.Common.Setting.Lighting`
-write with `if self._entity.value is not True`. On Bosch hoods the cached
-value of `Lighting` doesn't reliably track the physical light state — the
-appliance reports `True` even when the light is off. With no kwargs (plain
-toggle), the brightness/color-temp blocks are skipped too, so the guard
-turned the whole POST into an empty `data=[]`, which the appliance rejects
-with `400 BadRequest`. Now we always include the on-write payload; writing
-`True` to an already-on light is a no-op on the appliance.
-
 ### 8. Hood fan on/off uses PowerState
 
 **Files:** `fan.py`
@@ -200,6 +187,51 @@ for the program). The user's working Power switch already writes
 PowerState mapping resolution mirrors `common.generate_power_switch`
 (`POWER_SWITCH_VALUE_MAPINGS` precedence: `On/MainsOff`, `Standby/MainsOff`,
 `On/Off`, `On/Standby`, `Standby/Off`). For DWK91LT65 this resolves to `On/Off`.
+
+### 9. Hood light turn-on always writes the on-payload
+
+**Files:** `light.py`
+
+`HCLight.async_turn_on` was guarding the `Cooking.Common.Setting.Lighting`
+write with `if self._entity.value is not True`. On Bosch hoods the cached
+value of `Lighting` doesn't reliably track the physical light state — the
+appliance reports `True` even when the light is off. With no kwargs (plain
+toggle), the brightness/color-temp blocks are skipped too, so the guard
+turned the whole POST into an empty `data=[]`, which the appliance rejects
+with `400 BadRequest`. Now we always include the on-write payload; writing
+`True` to an already-on light is a no-op on the appliance.
+
+### 10. Hood light state properties tolerate value=None
+
+**Files:** `light.py`
+
+`color_temp_kelvin`, `brightness`, and `rgb_color` all dereferenced backing
+entity values without checking for `None`. `ColorTemperaturePercent` on
+Bosch hoods is flagged `available=false` with `value=None`, which made
+`color_temp_kelvin` raise `TypeError` from inside
+`LightEntity.state_attributes`. HA caught the exception, rolled back the
+optimistic on-state, and the UI reverted the light to "off" — making the
+turn-on look broken even when the write succeeded. All three getters now
+short-circuit to `None` when the underlying value is `None`.
+
+### 11. Hood light color-temp slider pairs custom-mode + percent
+
+**Files:** `light.py`, `entity_descriptions/cooking.py`
+
+The kelvin slider writes `Cooking.Hood.Setting.ColorTemperaturePercent` (uid
+4369). On its own this is rejected (400) because the appliance only accepts
+percent writes while the discrete `Cooking.Hood.Setting.ColorTemperature`
+enum (uid 4408) is in its `custom` (0) mode. The slider now bundles a
+`ColorTemperature=0` payload ahead of the percent in the same POST.
+
+`color_temp_kelvin` also falls back to mapping enum 1..5 (warm..cold) onto
+the slider when the percent reads `None` (i.e. the appliance is in a fixed
+preset), so the UI position reflects the real color temperature.
+
+The parallel `select_hood_color_temperature` from change #3 is now
+`entity_registry_enabled_default=False` — the slider covers the same
+endpoint, and the select is kept only as an opt-in for direct preset
+access.
 
 ## Open items / not yet done
 

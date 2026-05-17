@@ -552,6 +552,10 @@ COOKING_ENTITY_DESCRIPTIONS: _EntityDescriptionsDefinitionsType = {
             key="select_hood_color_temperature",
             entity="Cooking.Hood.Setting.ColorTemperature",
             has_state_translation=True,
+            # The main light's kelvin slider already drives this enum (paired with
+            # ColorTemperaturePercent in custom mode), so the select is redundant
+            # for most users. Kept for direct preset access; disabled by default.
+            entity_registry_enabled_default=False,
         ),
         HCSelectEntityDescription(
             key="select_hood_ventilation_profile",

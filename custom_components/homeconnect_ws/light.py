@@ -51,6 +51,9 @@ async def async_setup_entry(
     async_add_entites(entities)
 
 
+HOOD_COLOR_TEMPERATURE_ENUM_ENTITY = "Cooking.Hood.Setting.ColorTemperature"
+
+
 class HCLight(HCEntity, LightEntity):
     """Light Entity."""
 
@@ -59,6 +62,7 @@ class HCLight(HCEntity, LightEntity):
     _color_temperature_entity: HcEntity | None = None
     _color_entity: HcEntity | None = None
     _color_mode_entity: HcEntity | None = None
+    _color_temp_enum_entity: HcEntity | None = None
     _color_temp_inverted: bool = False
 
     def __init__(
@@ -78,9 +82,16 @@ class HCLight(HCEntity, LightEntity):
                 entity_description.color_temperature_entity
             ]
             self._entities.append(self._color_temperature_entity)
-            self._color_temp_inverted = (
-                "Cooking.Hood.Setting.ColorTemperature" in self._runtime_data.appliance.entities
+            # Bosch hoods expose both a percent entity and a discrete ColorTemperature
+            # enum. The enum's lowest value is 0 = "custom" — writing percent only
+            # works while the appliance is in custom mode, so we pair every percent
+            # write with a custom-mode pre-write.
+            self._color_temp_enum_entity = self._runtime_data.appliance.entities.get(
+                HOOD_COLOR_TEMPERATURE_ENUM_ENTITY
             )
+            if self._color_temp_enum_entity is not None:
+                self._entities.append(self._color_temp_enum_entity)
+            self._color_temp_inverted = self._color_temp_enum_entity is not None
 
         if entity_description.color_entity is not None:
             self._color_entity = self._runtime_data.appliance.entities[
@@ -129,33 +140,50 @@ class HCLight(HCEntity, LightEntity):
 
     @property
     def brightness(self) -> int | None:
-        if self._color_entity is not None:
+        # Guard against backing entities reporting value=None (e.g. Bosch hood
+        # entities flagged available=false): a crash here in state_attributes
+        # rolls back optimistic state and reverts the light to off in the UI.
+        if self._color_entity is not None and self._color_entity.value is not None:
             rgb = rgb_hex_to_rgb_list(self._color_entity.value.strip("#"))
             return max(rgb)
-        if self._brightness_entity is not None:
+        if self._brightness_entity is not None and self._brightness_entity.value is not None:
             return value_to_brightness((1, 100), self._brightness_entity.value)
         return None
 
     @property
     def color_temp_kelvin(self) -> int | None:
-        if self._color_temperature_entity is not None:
-            if self._color_temp_inverted:
-                return scale_ranged_value_to_int_range(
-                    (101, 0),
-                    (DEFAULT_MIN_KELVIN + 1, DEFAULT_MAX_KELVIN),
-                    self._color_temperature_entity.value,
-                )
-
+        if self._color_temperature_entity is None:
+            return None
+        value = self._color_temperature_entity.value
+        # When the appliance is in a fixed preset (warm/neutral/etc.), the percent
+        # entity reads None. Fall back to mapping the enum value onto the slider so
+        # the UI position still reflects the actual color temperature.
+        if value is None:
+            if self._color_temp_enum_entity is not None:
+                enum_value = self._color_temp_enum_entity.value_raw
+                if isinstance(enum_value, int) and 1 <= enum_value <= 5:
+                    # Enum 1..5 = warm..cold. Inverted axis (warm = high percent).
+                    return scale_ranged_value_to_int_range(
+                        (5, 1),
+                        (DEFAULT_MIN_KELVIN + 1, DEFAULT_MAX_KELVIN),
+                        enum_value,
+                    )
+            return None
+        if self._color_temp_inverted:
             return scale_ranged_value_to_int_range(
-                (1, 100),
+                (101, 0),
                 (DEFAULT_MIN_KELVIN + 1, DEFAULT_MAX_KELVIN),
-                self._color_temperature_entity.value,
+                value,
             )
-        return None
+        return scale_ranged_value_to_int_range(
+            (1, 100),
+            (DEFAULT_MIN_KELVIN + 1, DEFAULT_MAX_KELVIN),
+            value,
+        )
 
     @property
     def rgb_color(self) -> tuple[int, int, int] | None:
-        if self._color_entity is not None:
+        if self._color_entity is not None and self._color_entity.value is not None:
             rgb = rgb_hex_to_rgb_list(self._color_entity.value.strip("#"))
             return match_max_scale((255,), rgb)
         return None
@@ -195,6 +223,7 @@ class HCLight(HCEntity, LightEntity):
             )
             data.append({"uid": self._brightness_entity.uid, "value": value_in_range})
 
+        color_temp_mode_payload: dict | None = None
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
             if self._color_temp_inverted:
                 value_in_range = int(
@@ -212,6 +241,15 @@ class HCLight(HCEntity, LightEntity):
                         kwargs[ATTR_COLOR_TEMP_KELVIN],
                     )
                 )
+            # Put the appliance into custom mode before writing the percent. Without
+            # this, Bosch hoods reject the percent write while the light is in a
+            # fixed preset (warm/neutral/etc.).
+            if self._color_temp_enum_entity is not None:
+                color_temp_mode_payload = {
+                    "uid": self._color_temp_enum_entity.uid,
+                    "value": 0,
+                }
+                data.append(color_temp_mode_payload)
             color_temp_payload = {
                 "uid": self._color_temperature_entity.uid,
                 "value": value_in_range,
@@ -233,9 +271,14 @@ class HCLight(HCEntity, LightEntity):
             # Some Bosch firmwares reject writes to ColorTemperaturePercent (e.g. flagged
             # available=false in the profile). Retry without it so on/off + brightness
             # still take effect; user can use the ColorTemperature select instead.
+            # The custom-mode pre-write only makes sense paired with the percent, so
+            # drop it from the retry too.
             if color_temp_payload is None:
                 raise
-            retry_data = [item for item in data if item is not color_temp_payload]
+            stripped = {id(color_temp_payload)}
+            if color_temp_mode_payload is not None:
+                stripped.add(id(color_temp_mode_payload))
+            retry_data = [item for item in data if id(item) not in stripped]
             if not retry_data:
                 raise
             _LOGGER.debug(
