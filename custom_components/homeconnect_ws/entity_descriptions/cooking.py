@@ -552,6 +552,11 @@ COOKING_ENTITY_DESCRIPTIONS: _EntityDescriptionsDefinitionsType = {
             entity_category=EntityCategory.CONFIG,
         ),
         HCSelectEntityDescription(
+            key="select_hood_color_temperature",
+            entity="Cooking.Hood.Setting.ColorTemperature",
+            has_state_translation=True,
+        ),
+        HCSelectEntityDescription(
             key="select_hood_ventilation_profile",
             entity="Cooking.Hood.Setting.VentilationProfileOperating",
             has_state_translation=True,

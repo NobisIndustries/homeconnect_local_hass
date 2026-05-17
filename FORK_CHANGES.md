@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.7`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.8`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -223,12 +223,13 @@ Bosch firmware rejects that endpoint regardless of mode (we also tried
 bundling a `ColorTemperature=0`/custom pre-write — still 400). Switched
 the slider to drive the discrete `Cooking.Hood.Setting.ColorTemperature`
 enum directly, mapping the kelvin range onto raw values 1..5
-(warm..cold, inverted axis). The 0 = "custom" slot is read-only fallback
-(slider reports None when the appliance reports it).
+(warm..cold). The axis matches HA's convention: raw 1 (warm) → low
+kelvin, raw 5 (cold) → high kelvin. The 0 = "custom" slot is read-only
+fallback (slider reports None when the appliance reports it).
 
-The parallel `select_hood_color_temperature` from change #3 is removed —
-the slider covers the same endpoint with the same semantics. The
-translations entry for it is gone too.
+The parallel `select_hood_color_temperature` from change #3 is kept as
+a backup control — slider and select drive the same enum, just with
+different UX.
 
 Supersedes the slider half of change #2: `ColorTemperaturePercent` is no
 longer referenced by the integration. The light entity's resilience
