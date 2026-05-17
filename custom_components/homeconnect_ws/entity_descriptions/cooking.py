@@ -318,14 +318,17 @@ def generate_hob_zones(appliance: HomeAppliance) -> HCFanEntityDescription:
 
 def generate_hood_light(appliance: HomeAppliance) -> HCFanEntityDescription:
     """Get Hood light descriptions."""
-    # Color-temperature percent is offered in COLOR_TEMP mode even when the device
-    # reports available=false — some Bosch firmwares mislabel it but still accept writes.
-    if "Cooking.Hood.Setting.ColorTemperaturePercent" in appliance.entities:
+    # Drive the kelvin slider off the discrete ColorTemperature enum
+    # (warm/warmToNeutral/neutral/neutralToCold/cold). The parallel
+    # ColorTemperaturePercent endpoint is flagged available=false on Bosch
+    # hoods and rejects writes even when paired with a custom-mode pre-write,
+    # so we don't use it.
+    if "Cooking.Hood.Setting.ColorTemperature" in appliance.entities:
         return HCLightEntityDescription(
             key="light_cooking_lighting",
             entity="Cooking.Common.Setting.Lighting",
             brightness_entity="Cooking.Common.Setting.LightingBrightness",
-            color_temperature_entity="Cooking.Hood.Setting.ColorTemperaturePercent",
+            color_temperature_entity="Cooking.Hood.Setting.ColorTemperature",
         )
 
     if (
@@ -547,15 +550,6 @@ COOKING_ENTITY_DESCRIPTIONS: _EntityDescriptionsDefinitionsType = {
             entity="Cooking.Hood.Setting.CarbonFilterType",
             has_state_translation=True,
             entity_category=EntityCategory.CONFIG,
-        ),
-        HCSelectEntityDescription(
-            key="select_hood_color_temperature",
-            entity="Cooking.Hood.Setting.ColorTemperature",
-            has_state_translation=True,
-            # The main light's kelvin slider already drives this enum (paired with
-            # ColorTemperaturePercent in custom mode), so the select is redundant
-            # for most users. Kept for direct preset access; disabled by default.
-            entity_registry_enabled_default=False,
         ),
         HCSelectEntityDescription(
             key="select_hood_ventilation_profile",

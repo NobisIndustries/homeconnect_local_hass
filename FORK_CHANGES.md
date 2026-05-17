@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.6`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.7`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -214,24 +214,26 @@ optimistic on-state, and the UI reverted the light to "off" — making the
 turn-on look broken even when the write succeeded. All three getters now
 short-circuit to `None` when the underlying value is `None`.
 
-### 11. Hood light color-temp slider pairs custom-mode + percent
+### 11. Hood light color-temp slider drives the ColorTemperature enum
 
-**Files:** `light.py`, `entity_descriptions/cooking.py`
+**Files:** `light.py`, `entity_descriptions/cooking.py`, `translations/en.json`
 
-The kelvin slider writes `Cooking.Hood.Setting.ColorTemperaturePercent` (uid
-4369). On its own this is rejected (400) because the appliance only accepts
-percent writes while the discrete `Cooking.Hood.Setting.ColorTemperature`
-enum (uid 4408) is in its `custom` (0) mode. The slider now bundles a
-`ColorTemperature=0` payload ahead of the percent in the same POST.
+The slider used to write `Cooking.Hood.Setting.ColorTemperaturePercent`.
+Bosch firmware rejects that endpoint regardless of mode (we also tried
+bundling a `ColorTemperature=0`/custom pre-write — still 400). Switched
+the slider to drive the discrete `Cooking.Hood.Setting.ColorTemperature`
+enum directly, mapping the kelvin range onto raw values 1..5
+(warm..cold, inverted axis). The 0 = "custom" slot is read-only fallback
+(slider reports None when the appliance reports it).
 
-`color_temp_kelvin` also falls back to mapping enum 1..5 (warm..cold) onto
-the slider when the percent reads `None` (i.e. the appliance is in a fixed
-preset), so the UI position reflects the real color temperature.
+The parallel `select_hood_color_temperature` from change #3 is removed —
+the slider covers the same endpoint with the same semantics. The
+translations entry for it is gone too.
 
-The parallel `select_hood_color_temperature` from change #3 is now
-`entity_registry_enabled_default=False` — the slider covers the same
-endpoint, and the select is kept only as an opt-in for direct preset
-access.
+Supersedes the slider half of change #2: `ColorTemperaturePercent` is no
+longer referenced by the integration. The light entity's resilience
+fixes (per-payload retry, None-tolerant state getters, always-on-write)
+are still in place from #2 / #9 / #10.
 
 ## Open items / not yet done
 
