@@ -151,12 +151,18 @@ def generate_program(appliance: HomeAppliance) -> EntityDescriptions:
                 mapping=sorted_programs,
             )
         ]
+        # Hoods get dedicated per-program start buttons (defined in cooking.py), which
+        # match Bosch's start-only program semantics better than a select.
+        # Why: the select would POST shadow-filled options and frequently 400 from
+        # the appliance. Disable it by default for hoods; keep available for power users.
+        is_hood = appliance.info.get("type") == "Hood"
         descriptions["program"] = [
             HCSelectEntityDescription(
                 key="select_program",
                 entity="BSH.Common.Root.SelectedProgram",
                 has_state_translation=False,
                 mapping=sorted_programs,
+                entity_registry_enabled_default=not is_hood,
             )
         ]
 

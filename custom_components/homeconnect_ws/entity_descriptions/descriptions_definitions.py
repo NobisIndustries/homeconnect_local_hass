@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict
 
 from homeassistant.components.binary_sensor import BinarySensorEntityDescription
 from homeassistant.components.button import ButtonEntityDescription
@@ -86,6 +86,8 @@ class HCButtonEntityDescription(
     """Description for Button Entity."""
 
     available_access: tuple[Access] = (Access.READ_WRITE, Access.WRITE_ONLY)
+    program: str | None = None
+    program_options: dict[str, Any] | None = None
 
 
 class HCNumberEntityDescription(
@@ -110,6 +112,8 @@ class HCFanEntityDescription(HCEntityDescription, FanEntityDescription, frozen_o
     """Description for Fan Entity."""
 
     available_access: tuple[Access] = (Access.READ_WRITE,)
+    venting_program: str | None = None
+    auto_program: str | None = None
 
 
 class EntityDescriptions(TypedDict):

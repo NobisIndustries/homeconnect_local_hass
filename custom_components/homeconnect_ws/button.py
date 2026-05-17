@@ -13,7 +13,7 @@ from .helpers import create_entities, error_decorator
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
-    from homeconnect_websocket.entities import ActiveProgram, Command
+    from homeconnect_websocket.entities import ActiveProgram, Command, Program
 
     from . import HCConfigEntry
     from .entity_descriptions.descriptions_definitions import HCButtonEntityDescription
@@ -34,12 +34,24 @@ async def async_setup_entry(
 
 
 class HCButton(HCEntity, ButtonEntity):
-    """Abort Button Entity."""
+    """Command / Program-start Button Entity.
 
-    _entity: Command
+    If the entity description carries a ``program`` field, pressing starts that program
+    with ``program_options`` (no shadow-value pollution). Otherwise it writes ``True``
+    to the underlying Command entity.
+    """
+
     entity_description: HCButtonEntityDescription
+    _entity: Command | Program
 
+    @error_decorator
     async def async_press(self) -> None:
+        program_name = self.entity_description.program
+        if program_name is not None:
+            program: Program = self._runtime_data.appliance.programs[program_name]
+            options = self.entity_description.program_options or {}
+            await program.start(options=options, override_options=True)
+            return
         await self._entity.set_value(True)
 
 

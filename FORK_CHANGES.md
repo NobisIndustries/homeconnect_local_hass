@@ -1,0 +1,159 @@
+# Fork changes
+
+Current fork version: **`1.0.5b10+hood.1`** (upstream baseline `1.0.5b10`, PEP-440
+local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
+
+Living catalogue of why this fork diverges from upstream
+[chris-mc1/homeconnect_local_hass](https://github.com/chris-mc1/homeconnect_local_hass)
+and what was changed. Append new entries at the bottom as work continues.
+
+## Intent
+
+Upstream supports Bosch/Siemens Home Connect appliances generically. Hood support is
+shallow — only ambient light, basic power, and a few config sensors work end-to-end.
+This fork's primary goal is to make a Bosch DWK91LT65 (and similar hoods) actually
+controllable from Home Assistant: main light with brightness + color temperature, fan
+speeds (3 normal + 2 intensive), program selection, and filter-saturation reset.
+
+Changes are kept hood-scoped where possible so other appliance classes aren't affected.
+
+## How the integration works (quick reference)
+
+- Profiles are downloaded with the Home Connect Profile Downloader (openHAB target);
+  the integration parses `*_DeviceDescription.xml` + `*_FeatureMapping.xml` via the
+  `homeconnect_websocket` package into typed `Entity` / `Setting` / `Status` /
+  `Command` / `Program` objects on a `HomeAppliance`.
+- Each platform (`switch`, `light`, `fan`, `number`, `select`, `button`, `sensor`,
+  `binary_sensor`) is declared by entity descriptions in
+  `custom_components/homeconnect_ws/entity_descriptions/`. A descriptor references one
+  or more `Entity` *names*; if all referenced entities exist in the parsed profile, an
+  HA entity is created.
+- Writes go over the WebSocket as `POST /ro/values` (entity value writes),
+  `POST /ro/selectedProgram` (program select), or `POST /ro/activeProgram` (program
+  start). The appliance can return `400 BadRequest` for many semantic reasons
+  (unavailable, busy, options inconsistent, etc.).
+
+## Changes
+
+### 1. Hood filter reset buttons appear (and grease "dirtyness" reset works)
+
+**Files:** `entity_descriptions/cooking.py`
+
+The four `Cooking.Common.Command.Hood.*FilterReset` descriptor entries had
+**trailing spaces** in their entity names (e.g.
+`"Cooking.Common.Command.Hood.GreaseFilterReset "`), so they never matched the parsed
+entity name and the buttons were silently dropped. Stripped the trailing spaces.
+Translations and `services.yaml` were already in place, so the buttons now surface
+with their existing names.
+
+### 2. Hood main light: keep COLOR_TEMP mode and tolerate per-attribute rejection
+
+**Files:** `entity_descriptions/cooking.py`, `light.py`
+
+Upstream gated COLOR_TEMP mode on `ColorTemperaturePercent` being *present* in the
+profile. For the DWK91LT65 the entity exists but the device reports
+`available="false"`; despite that, the physical light supports color-temp adjustment
+and the API often accepts the write. So:
+
+- `generate_hood_light` still picks COLOR_TEMP mode when the entity is present;
+  the `available=false` flag is treated as advisory, not authoritative.
+- `light.async_turn_on` now bundles all writes into one `/ro/values` POST as before,
+  but on `CodeResponsError` (4xx from the appliance) **retries without the
+  color-temperature payload**. The light's on-state and brightness write still take
+  effect — without the retry, HA was rolling back the optimistic on-state because
+  the whole POST failed, producing the "switch flips back off" behaviour.
+
+The retry is conservative: it only strips the color-temp payload, and only if it was
+present.
+
+### 3. Parallel ColorTemperature select for the hood light
+
+**Files:** `entity_descriptions/cooking.py`, `translations/en.json`
+
+Added a `select_hood_color_temperature` entity backed by
+`Cooking.Hood.Setting.ColorTemperature` (enum custom/warm/warmToNeutral/neutral/
+neutralToCold/cold). This is the documented-as-available control on the profile and
+works even when the percent endpoint rejects writes. Users get both the slider on the
+Light entity and this discrete select.
+
+### 4. Per-program start buttons for hoods
+
+**Files:** `entity_descriptions/cooking.py`, `button.py`,
+`entity_descriptions/descriptions_definitions.py`, `entity_descriptions/common.py`,
+`translations/en.json`
+
+All Hood programs (`Automatic`, `Venting`, `Interval`, `DelayedShutOff`) are declared
+as `execution="startOnly"` in the DeviceDescription. The generic "Selected Program"
+select issues a `start()` that injects all the program's read-write options at their
+current shadow value, which the appliance frequently rejects with a `400`.
+
+Approach:
+
+- New optional fields on `HCButtonEntityDescription`: `program` (program entity name)
+  and `program_options` (explicit option dict). When `program` is set, `HCButton.press()`
+  calls `program.start(options=program_options or {}, override_options=True)` —
+  bypassing the shadow-fill in `_build_options`.
+- Added four hood program buttons keyed off the program names. Translations added.
+- The generic "Selected Program" select is now `entity_registry_enabled_default=False`
+  for `appliance.info["type"] == "Hood"` so it stops cluttering the UI by default,
+  while remaining available for power users.
+
+### 5. Hood fan = program-start semantics (Off + 5 speeds + Auto preset)
+
+**Files:** `fan.py`, `entity_descriptions/cooking.py`,
+`entity_descriptions/descriptions_definitions.py`
+
+Upstream `HCFan` writes `Cooking.Common.Option.Hood.VentingLevel` and
+`Cooking.Common.Option.Hood.IntensiveLevel` directly. On Bosch hoods these option
+writes alone are no-ops; the fan only runs when the `Cooking.Common.Program.Hood.Venting`
+program is *started* with the level as an option. That's why upstream's hood fan
+didn't toggle or change speed.
+
+New `HCHoodFan` class (kept side-by-side with `HCFan`; selection is by whether the
+fan descriptor has a `venting_program`):
+
+- Speed count derived from the union of `VentingLevel` and `IntensiveLevel` enum
+  values (excluding 0). For DWK91LT65: VentingLevel has Stage01..05; IntensiveLevel
+  has only `IntensiveStageOff` so all 5 speeds come from VentingLevel.
+  Other hoods that split 3 normal + 2 intensive across the two options also get a
+  combined 5-speed mapping.
+- `async_set_percentage` / `async_turn_on` start the Venting program with the
+  chosen option set explicitly (`override_options=True`).
+- `async_turn_off` starts Venting with VentingLevel=0.
+- `auto` preset (when `Cooking.Common.Program.Hood.Automatic` exists) starts the
+  Automatic program.
+- State is read from `appliance.active_program` + the option entities' current
+  values; the entity subscribes to `BSH.Common.Root.ActiveProgram` updates so HA
+  reflects external state changes.
+
+`HCFan` is untouched — non-hood fan entities (if any) continue to use the old
+option-write path.
+
+### 6. Section-E extras for the hood
+
+**Files:** `entity_descriptions/cooking.py`, `translations/en.json`
+
+Added entities for settings/sensors that exist in the DWK91LT65 profile but weren't
+exposed. All hood-only (gated by the entity names existing in the profile), most
+under `EntityCategory.CONFIG`:
+
+- Sensor: `Cooking.Hood.Status.RegenerativeCarbonFilterSaturation`
+- Switch: `Cooking.Hood.Setting.IntervalTotalExecutionTimeLimitation`
+- Number: `Cooking.Hood.Setting.IntervalTotalExecutionTime`
+- Selects: `VentilationProfileOperating`, `VentilationStartupSetting`,
+  `VentilationShutdownSetting`, `WorkingLightStartupSetting`,
+  `WorkingLightShutdownSetting`, `MoodlightStartupSetting`,
+  `MoodlightShutdownSetting`, `FilterSaturationNotificationInterval`,
+  `BSH.Common.Setting.Favorite.001/002.Functionality` (disabled by default)
+
+## Open items / not yet done
+
+- No automated tests for the new hood fan / program buttons (HA dev deps don't all
+  install cleanly on Windows). Add coverage when convenient.
+- The `HCButtonEntityDescription.program_options` field is typed
+  `dict[str, Any]` but `Program.start()` actually expects `dict[int, ...]` (option
+  uid → value). The current code only passes `{}`, so the mismatch is harmless;
+  tighten the type if/when we pass real options.
+- Other Bosch/Siemens hood models may have `IntensiveLevel` populated with real
+  Stage04/Stage05 values — the new `HCHoodFan` mapping handles that already, but it
+  hasn't been verified against a profile that uses the split.

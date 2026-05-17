@@ -200,6 +200,9 @@
       "switch_hood_silence_mode": {
         "name": "Silence Mode"
       },
+      "switch_hood_interval_total_execution_time_limitation": {
+        "name": "Interval total runtime limit"
+      },
       "switch_refrigerator_fresh_mode": {
         "name": "Fresh Mode"
       },
@@ -861,6 +864,9 @@
       },
       "sensor_carbon_filter_saturation": {
         "name": "Carbon Filter Saturation"
+      },
+      "sensor_regenerative_carbon_filter_saturation": {
+        "name": "Regenerative Carbon Filter Saturation"
       },
       "sensor_hob_zone_state": {
         "name": "Zone {group_name} State",
@@ -1925,6 +1931,99 @@
           "fahrenheit": "Basic Carbon filter",
           "regenerativecarbonfilter": "Regenerative Carbon filter"
         }
+      },
+      "select_hood_color_temperature": {
+        "name": "Light color temperature",
+        "state": {
+          "custom": "Custom",
+          "warm": "Warm",
+          "warmtoneutral": "Warm to neutral",
+          "neutral": "Neutral",
+          "neutraltocold": "Neutral to cold",
+          "cold": "Cold"
+        }
+      },
+      "select_hood_ventilation_profile": {
+        "name": "Ventilation profile",
+        "state": {
+          "defaultprofile": "Default",
+          "silentprofile": "Silent",
+          "powerprofile": "Power"
+        }
+      },
+      "select_hood_ventilation_startup": {
+        "name": "Ventilation startup",
+        "state": {
+          "manualventing": "Manual",
+          "automaticventing": "Automatic"
+        }
+      },
+      "select_hood_ventilation_shutdown": {
+        "name": "Ventilation shutdown",
+        "state": {
+          "off": "Off",
+          "delayedshutoff": "Delayed shutoff"
+        }
+      },
+      "select_hood_working_light_startup": {
+        "name": "Working light at startup",
+        "state": {
+          "turnonlight": "Turn on light",
+          "keeplightoff": "Keep light off"
+        }
+      },
+      "select_hood_working_light_shutdown": {
+        "name": "Working light at shutdown",
+        "state": {
+          "turnofflight": "Turn off light",
+          "keeplighton": "Keep light on"
+        }
+      },
+      "select_hood_moodlight_startup": {
+        "name": "Mood light at startup",
+        "state": {
+          "donothing": "Do nothing",
+          "turnonmoodlight": "Turn on mood light",
+          "usestartupcolorflight": "Use startup color light"
+        }
+      },
+      "select_hood_moodlight_shutdown": {
+        "name": "Mood light at shutdown",
+        "state": {
+          "donothing": "Do nothing",
+          "turnoffmoodlight": "Turn off mood light",
+          "useshutdowncolorflight": "Use shutdown color light"
+        }
+      },
+      "select_hood_filter_saturation_notification_interval": {
+        "name": "Filter saturation notification interval",
+        "state": {
+          "lessfrequent": "Less frequent",
+          "regular": "Regular",
+          "morefrequent": "More frequent"
+        }
+      },
+      "select_hood_favorite_1_functionality": {
+        "name": "Favorite 1 function",
+        "state": {
+          "off": "Off",
+          "workinglightbrightnesslevel1": "Working light brightness 1",
+          "workinglightbrightnesslevel2": "Working light brightness 2",
+          "workinglightbrightnesslevel3": "Working light brightness 3",
+          "resetgreasefiltersaturation": "Reset grease filter",
+          "externaltrigger": "External trigger"
+        }
+      },
+      "select_hood_favorite_2_functionality": {
+        "name": "Favorite 2 function",
+        "state": {
+          "off": "Off",
+          "workinglightbrightnesslevel1": "Working light brightness 1",
+          "workinglightbrightnesslevel2": "Working light brightness 2",
+          "workinglightbrightnesslevel3": "Working light brightness 3",
+          "resetgreasefiltersaturation": "Reset grease filter",
+          "externaltrigger": "External trigger"
+        }
       }
     },
     "button": {
@@ -1954,6 +2053,18 @@
       },
       "button_hood_regenerative_carbon_filter_lifetime_reset": {
         "name": "Regenerative Carbon filter lifetime reset"
+      },
+      "button_hood_program_automatic": {
+        "name": "Start Automatic"
+      },
+      "button_hood_program_venting": {
+        "name": "Start Venting"
+      },
+      "button_hood_program_interval": {
+        "name": "Start Interval"
+      },
+      "button_hood_program_delayed_shutoff": {
+        "name": "Start Delayed Shutoff"
       }
     },
     "number": {
@@ -2007,6 +2118,9 @@
       },
       "number_hood_sensor_sensitivity": {
         "name": "Auto Sensor Sensitivity"
+      },
+      "number_hood_interval_total_execution_time": {
+        "name": "Interval total runtime"
       },
       "number_start_in": {
         "name": "Start in"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.light import (
@@ -20,11 +21,14 @@ from homeassistant.util.color import (
     value_to_brightness,
 )
 from homeassistant.util.scaling import scale_ranged_value_to_int_range
+from homeconnect_websocket.errors import CodeResponsError
 from homeconnect_websocket.message import Action
 from homeconnect_websocket.message import Message as HC_Message
 
 from .entity import HCEntity
 from .helpers import create_entities, entity_is_available, error_decorator
+
+_LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -161,17 +165,15 @@ class HCLight(HCEntity, LightEntity):
 
     @error_decorator
     async def async_turn_on(self, **kwargs: Any) -> None:
-        message = HC_Message(
-            resource="/ro/values",
-            action=Action.POST,
-            data=[],
-        )
         brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness)
         rgb = kwargs.get(ATTR_RGB_COLOR, self.rgb_color)
 
+        data: list[dict] = []
+        color_temp_payload: dict | None = None
+
         if self._attr_color_mode == ColorMode.RGB:
             rgb_with_brightness = tuple(color * brightness // 255 for color in rgb)
-            message.data.append(
+            data.append(
                 {
                     "uid": self._color_entity.uid,
                     "value": "#" + color_rgb_to_hex(*rgb_with_brightness),
@@ -182,7 +184,7 @@ class HCLight(HCEntity, LightEntity):
                 and self._color_mode_entity.value != "CustomColor"
             ):
                 color_mode_value = self._color_mode_entity._rev_enumeration["CustomColor"]  # noqa: SLF001
-                message.data.append({"uid": self._color_mode_entity.uid, "value": color_mode_value})
+                data.append({"uid": self._color_mode_entity.uid, "value": color_mode_value})
 
         elif (
             self._attr_color_mode in (ColorMode.BRIGHTNESS, ColorMode.COLOR_TEMP)
@@ -194,7 +196,7 @@ class HCLight(HCEntity, LightEntity):
                     self._brightness_entity.min,
                 )
             )
-            message.data.append({"uid": self._brightness_entity.uid, "value": value_in_range})
+            data.append({"uid": self._brightness_entity.uid, "value": value_in_range})
 
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
             if self._color_temp_inverted:
@@ -213,13 +215,35 @@ class HCLight(HCEntity, LightEntity):
                         kwargs[ATTR_COLOR_TEMP_KELVIN],
                     )
                 )
-            message.data.append(
-                {"uid": self._color_temperature_entity.uid, "value": value_in_range}
-            )
+            color_temp_payload = {
+                "uid": self._color_temperature_entity.uid,
+                "value": value_in_range,
+            }
+            data.append(color_temp_payload)
 
         if self._entity.value is not True:
-            message.data.append({"uid": self._entity.uid, "value": True})
-        await self._runtime_data.appliance.session.send_sync(message)
+            data.append({"uid": self._entity.uid, "value": True})
+
+        session = self._runtime_data.appliance.session
+        try:
+            await session.send_sync(
+                HC_Message(resource="/ro/values", action=Action.POST, data=data)
+            )
+        except CodeResponsError:
+            # Some Bosch firmwares reject writes to ColorTemperaturePercent (e.g. flagged
+            # available=false in the profile). Retry without it so on/off + brightness
+            # still take effect; user can use the ColorTemperature select instead.
+            if color_temp_payload is None:
+                raise
+            retry_data = [item for item in data if item is not color_temp_payload]
+            if not retry_data:
+                raise
+            _LOGGER.debug(
+                "Light write rejected; retrying without ColorTemperaturePercent payload"
+            )
+            await session.send_sync(
+                HC_Message(resource="/ro/values", action=Action.POST, data=retry_data)
+            )
 
     @error_decorator
     async def async_turn_off(self, **kwargs: Any) -> None:

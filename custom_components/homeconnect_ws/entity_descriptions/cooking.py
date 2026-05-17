@@ -133,13 +133,25 @@ HOOD_FAN_ENTITIES = [
     "Cooking.Common.Option.Hood.IntensiveLevel",
 ]
 
+HOOD_VENTING_PROGRAM = "Cooking.Common.Program.Hood.Venting"
+HOOD_AUTOMATIC_PROGRAM = "Cooking.Common.Program.Hood.Automatic"
+
 
 def generate_hood_fan(appliance: HomeAppliance) -> HCFanEntityDescription:
     """Get Hood Fan description."""
     available_entities = [entity for entity in HOOD_FAN_ENTITIES if entity in appliance.entities]
-    if available_entities:
-        return HCFanEntityDescription(key="fan_hood", entities=available_entities)
-    return None
+    if not available_entities:
+        return None
+    # If the Venting program is exposed, the fan is program-driven (writing options alone
+    # does nothing on Bosch hoods — the venting program must be started).
+    venting_program = HOOD_VENTING_PROGRAM if HOOD_VENTING_PROGRAM in appliance.programs else None
+    auto_program = HOOD_AUTOMATIC_PROGRAM if HOOD_AUTOMATIC_PROGRAM in appliance.programs else None
+    return HCFanEntityDescription(
+        key="fan_hood",
+        entities=available_entities,
+        venting_program=venting_program,
+        auto_program=auto_program,
+    )
 
 
 def generate_hob_zones(appliance: HomeAppliance) -> HCFanEntityDescription:
@@ -306,6 +318,8 @@ def generate_hob_zones(appliance: HomeAppliance) -> HCFanEntityDescription:
 
 def generate_hood_light(appliance: HomeAppliance) -> HCFanEntityDescription:
     """Get Hood light descriptions."""
+    # Color-temperature percent is offered in COLOR_TEMP mode even when the device
+    # reports available=false — some Bosch firmwares mislabel it but still accept writes.
     if "Cooking.Hood.Setting.ColorTemperaturePercent" in appliance.entities:
         return HCLightEntityDescription(
             key="light_cooking_lighting",
@@ -400,6 +414,11 @@ COOKING_ENTITY_DESCRIPTIONS: _EntityDescriptionsDefinitionsType = {
             native_unit_of_measurement=PERCENTAGE,
         ),
         HCSensorEntityDescription(
+            key="sensor_regenerative_carbon_filter_saturation",
+            entity="Cooking.Hood.Status.RegenerativeCarbonFilterSaturation",
+            native_unit_of_measurement=PERCENTAGE,
+        ),
+        HCSensorEntityDescription(
             key="sensor_oven_water_tank",
             entities=(
                 "Cooking.Oven.Status.WaterTankUnplugged",
@@ -457,6 +476,14 @@ COOKING_ENTITY_DESCRIPTIONS: _EntityDescriptionsDefinitionsType = {
             key="number_hood_sensor_sensitivity",
             entity="Cooking.Hood.Setting.SensorSensitivity",
             mode=NumberMode.AUTO,
+        ),
+        HCNumberEntityDescription(
+            key="number_hood_interval_total_execution_time",
+            entity="Cooking.Hood.Setting.IntervalTotalExecutionTime",
+            device_class=NumberDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            mode=NumberMode.AUTO,
+            entity_category=EntityCategory.CONFIG,
         ),
     ],
     "select": [
@@ -521,6 +548,72 @@ COOKING_ENTITY_DESCRIPTIONS: _EntityDescriptionsDefinitionsType = {
             has_state_translation=True,
             entity_category=EntityCategory.CONFIG,
         ),
+        HCSelectEntityDescription(
+            key="select_hood_color_temperature",
+            entity="Cooking.Hood.Setting.ColorTemperature",
+            has_state_translation=True,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_ventilation_profile",
+            entity="Cooking.Hood.Setting.VentilationProfileOperating",
+            has_state_translation=True,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_ventilation_startup",
+            entity="Cooking.Hood.Setting.VentilationStartupSetting",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_ventilation_shutdown",
+            entity="Cooking.Hood.Setting.VentilationShutdownSetting",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_working_light_startup",
+            entity="Cooking.Hood.Setting.WorkingLightStartupSetting",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_working_light_shutdown",
+            entity="Cooking.Hood.Setting.WorkingLightShutdownSetting",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_moodlight_startup",
+            entity="Cooking.Hood.Setting.MoodlightStartupSetting",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_moodlight_shutdown",
+            entity="Cooking.Hood.Setting.MoodlightShutdownSetting",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_filter_saturation_notification_interval",
+            entity="Cooking.Hood.Setting.FilterSaturationNotificationInterval",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_favorite_1_functionality",
+            entity="BSH.Common.Setting.Favorite.001.Functionality",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+            entity_registry_enabled_default=False,
+        ),
+        HCSelectEntityDescription(
+            key="select_hood_favorite_2_functionality",
+            entity="BSH.Common.Setting.Favorite.002.Functionality",
+            has_state_translation=True,
+            entity_category=EntityCategory.CONFIG,
+            entity_registry_enabled_default=False,
+        ),
     ],
     "switch": [
         HCSwitchEntityDescription(
@@ -556,28 +649,54 @@ COOKING_ENTITY_DESCRIPTIONS: _EntityDescriptionsDefinitionsType = {
             entity="Cooking.Hood.Setting.NoiseReduction",
             device_class=SwitchDeviceClass.SWITCH,
         ),
+        HCSwitchEntityDescription(
+            key="switch_hood_interval_total_execution_time_limitation",
+            entity="Cooking.Hood.Setting.IntervalTotalExecutionTimeLimitation",
+            device_class=SwitchDeviceClass.SWITCH,
+            entity_category=EntityCategory.CONFIG,
+        ),
     ],
     "light": [generate_hood_light, generate_hood_ambient_light],
     "fan": [generate_hood_fan],
     "button": [
         HCButtonEntityDescription(
+            key="button_hood_program_automatic",
+            entity="Cooking.Common.Program.Hood.Automatic",
+            program="Cooking.Common.Program.Hood.Automatic",
+        ),
+        HCButtonEntityDescription(
+            key="button_hood_program_venting",
+            entity="Cooking.Common.Program.Hood.Venting",
+            program="Cooking.Common.Program.Hood.Venting",
+        ),
+        HCButtonEntityDescription(
+            key="button_hood_program_interval",
+            entity="Cooking.Common.Program.Hood.Interval",
+            program="Cooking.Common.Program.Hood.Interval",
+        ),
+        HCButtonEntityDescription(
+            key="button_hood_program_delayed_shutoff",
+            entity="Cooking.Common.Program.Hood.DelayedShutOff",
+            program="Cooking.Common.Program.Hood.DelayedShutOff",
+        ),
+        HCButtonEntityDescription(
             key="button_hood_carbon_filter_reset",
-            entity="Cooking.Common.Command.Hood.CarbonFilterReset ",
+            entity="Cooking.Common.Command.Hood.CarbonFilterReset",
             entity_category=EntityCategory.CONFIG,
         ),
         HCButtonEntityDescription(
             key="button_hood_grease_filter_reset",
-            entity="Cooking.Common.Command.Hood.GreaseFilterReset ",
+            entity="Cooking.Common.Command.Hood.GreaseFilterReset",
             entity_category=EntityCategory.CONFIG,
         ),
         HCButtonEntityDescription(
             key="button_hood_regenerative_carbon_filter_reset",
-            entity="Cooking.Common.Command.Hood.RegenerativeCarbonFilterReset ",
+            entity="Cooking.Common.Command.Hood.RegenerativeCarbonFilterReset",
             entity_category=EntityCategory.CONFIG,
         ),
         HCButtonEntityDescription(
             key="button_hood_regenerative_carbon_filter_lifetime_reset",
-            entity="Cooking.Common.Command.Hood.RegenerativeCarbonFilterLifeTimeReset ",
+            entity="Cooking.Common.Command.Hood.RegenerativeCarbonFilterLifeTimeReset",
             entity_category=EntityCategory.CONFIG,
         ),
     ],
