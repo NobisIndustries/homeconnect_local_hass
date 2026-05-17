@@ -218,8 +218,11 @@ class HCLight(HCEntity, LightEntity):
             }
             data.append(color_temp_payload)
 
-        if self._entity.value is not True:
-            data.append({"uid": self._entity.uid, "value": True})
+        # Always include the on-write. On Bosch hoods the cached value of
+        # Cooking.Common.Setting.Lighting can lag the physical state, so guarding
+        # on `self._entity.value is not True` would suppress a legitimate turn-on.
+        # Writing True when already on is a no-op on the appliance.
+        data.append({"uid": self._entity.uid, "value": True})
 
         session = self._runtime_data.appliance.session
         try:

@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.3`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.4`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -167,6 +167,19 @@ happens routinely:
 nor the secondary entities' `available` flags can take the light offline. Write
 failures are still handled gracefully by `async_turn_on`'s per-payload retry from
 change #2.
+
+### 9. Hood light turn-on always writes the on-payload
+
+**Files:** `light.py`
+
+`HCLight.async_turn_on` was guarding the `Cooking.Common.Setting.Lighting`
+write with `if self._entity.value is not True`. On Bosch hoods the cached
+value of `Lighting` doesn't reliably track the physical light state — the
+appliance reports `True` even when the light is off. With no kwargs (plain
+toggle), the brightness/color-temp blocks are skipped too, so the guard
+turned the whole POST into an empty `data=[]`, which the appliance rejects
+with `400 BadRequest`. Now we always include the on-write payload; writing
+`True` to an already-on light is a no-op on the appliance.
 
 ### 8. Hood fan on/off uses PowerState
 
