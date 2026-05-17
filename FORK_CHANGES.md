@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.9`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.10`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -223,11 +223,17 @@ Bosch firmware rejects that endpoint regardless of mode (we also tried
 bundling a `ColorTemperature=0`/custom pre-write — still 400). Switched
 the slider to drive the discrete `Cooking.Hood.Setting.ColorTemperature`
 enum directly, mapping the kelvin range onto raw values 1..5
-(warm..cold). The kelvin-axis ↔ enum-axis mapping is inverted
-empirically: on the DWK91LT65, dragging the slider to 2000 K produced
-cold/blue light unless we flip the axis (i.e. the slider's warm end
-needs to write the cold enum value). The 0 = "custom" slot is
-read-only fallback (slider reports None when the appliance reports it).
+(warm..cold). The axis is inverted vs HA's kelvin convention per
+empirical testing on the DWK91LT65: 2000 K (slider min) → raw 5
+(cold), 6535 K (slider max) → raw 1 (warm). On the write path the
+slider endpoint clamps cleanly: source range is `(MIN_K, MAX_K)` (not
+`MIN_K+1`, which was a leftover from the percent scaling), and the
+scaled value is rounded (not truncated) before being clamped into
+1..5. Without these, the slider's bottom-end kelvin landed on raw 4
+(neutralToCold) instead of 5 (cold).
+
+The 0 = "custom" slot is read-only fallback (slider reports None when
+the appliance reports it).
 
 The parallel `select_hood_color_temperature` from change #3 is kept as
 a backup control — slider and select drive the same enum, just with

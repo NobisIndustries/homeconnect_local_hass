@@ -83,10 +83,11 @@ class HCLight(HCEntity, LightEntity):
             self._entities.append(self._color_temperature_entity)
             # Hood color temperature is the discrete ColorTemperature enum
             # (custom/warm/warmToNeutral/neutral/neutralToCold/cold, raw 0..5).
-            # Map the kelvin slider to enum 1..5. Empirically the slider's
-            # kelvin axis runs opposite to the enum on Bosch DWK91LT65: the
-            # warm end of the slider needs to write raw 5 (cold enum) to
-            # match physical behaviour. Invert.
+            # Map the kelvin slider to enum 1..5. Per empirical testing on
+            # DWK91LT65 the desired axis is inverted vs HA's convention:
+            # 2000 K (slider min) -> raw 5 (cold), 6535 K (slider max) ->
+            # raw 1 (warm). Slider direction matches the cooktop hood's
+            # physical "intensity" interpretation.
             if self._color_temperature_entity.name == "Cooking.Hood.Setting.ColorTemperature":
                 self._color_temp_enum_range = (1, 5)
                 self._color_temp_inverted = True
@@ -160,7 +161,7 @@ class HCLight(HCEntity, LightEntity):
                 return None
             return scale_ranged_value_to_int_range(
                 (high, low) if self._color_temp_inverted else (low, high),
-                (DEFAULT_MIN_KELVIN + 1, DEFAULT_MAX_KELVIN),
+                (DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN),
                 raw,
             )
         value = self._color_temperature_entity.value
@@ -221,18 +222,28 @@ class HCLight(HCEntity, LightEntity):
             data.append({"uid": self._brightness_entity.uid, "value": value_in_range})
 
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
+            kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
             if self._color_temp_enum_range is not None:
                 low, high = self._color_temp_enum_range
                 target_range = (high, low) if self._color_temp_inverted else (low, high)
+                # Use the slider's true min/max and round so the endpoints land
+                # cleanly on the boundary enum values instead of being truncated
+                # one step short.
+                raw_value = scale_ranged_value_to_int_range(
+                    (DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN),
+                    target_range,
+                    kelvin,
+                )
+                value_in_range = max(low, min(high, round(raw_value)))
             else:
                 target_range = (101, 0) if self._color_temp_inverted else (1, 100)
-            value_in_range = int(
-                scale_ranged_value_to_int_range(
-                    (DEFAULT_MIN_KELVIN + 1, DEFAULT_MAX_KELVIN),
-                    target_range,
-                    kwargs[ATTR_COLOR_TEMP_KELVIN],
+                value_in_range = int(
+                    scale_ranged_value_to_int_range(
+                        (DEFAULT_MIN_KELVIN + 1, DEFAULT_MAX_KELVIN),
+                        target_range,
+                        kelvin,
+                    )
                 )
-            )
             color_temp_payload = {
                 "uid": self._color_temperature_entity.uid,
                 "value": value_in_range,
