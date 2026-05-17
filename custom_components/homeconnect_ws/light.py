@@ -83,11 +83,13 @@ class HCLight(HCEntity, LightEntity):
             self._entities.append(self._color_temperature_entity)
             # Hood color temperature is the discrete ColorTemperature enum
             # (custom/warm/warmToNeutral/neutral/neutralToCold/cold, raw 0..5).
-            # Map the kelvin slider to enum 1..5 (skipping custom). The enum
-            # axis matches kelvin's: raw 1 (warm) -> low kelvin, raw 5 (cold)
-            # -> high kelvin. No inversion.
+            # Map the kelvin slider to enum 1..5. Empirically the slider's
+            # kelvin axis runs opposite to the enum on Bosch DWK91LT65: the
+            # warm end of the slider needs to write raw 5 (cold enum) to
+            # match physical behaviour. Invert.
             if self._color_temperature_entity.name == "Cooking.Hood.Setting.ColorTemperature":
                 self._color_temp_enum_range = (1, 5)
+                self._color_temp_inverted = True
 
         if entity_description.color_entity is not None:
             self._color_entity = self._runtime_data.appliance.entities[
