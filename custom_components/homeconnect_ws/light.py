@@ -111,11 +111,17 @@ class HCLight(HCEntity, LightEntity):
 
     @property
     def available(self) -> bool:
-        # Only the primary on/off entity gates availability. Secondary attribute
-        # entities (brightness, color, color_temp) frequently flip to
-        # available=false on Bosch hoods — that shouldn't take the whole light
-        # offline, since on/off and the attributes that ARE writable still work.
-        return super().available
+        # Don't gate the light on its entities' `available` flags. Bosch hoods
+        # routinely flip both the primary `Cooking.Common.Setting.Lighting` and
+        # the secondary brightness/color/color-temp entities to available=false
+        # (e.g. when PowerState=Off, or for ColorTemperaturePercent as a static
+        # DDF quirk). The user can still turn the light on; the appliance will
+        # accept the write. We only gate on session connectivity; write failures
+        # are handled in async_turn_on's retry path.
+        return (
+            self._runtime_data.coordinator.connected
+            or self._runtime_data.appliance.session.connected
+        )
 
     @property
     def is_on(self) -> bool | None:

@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.2`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.3`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -146,23 +146,26 @@ under `EntityCategory.CONFIG`:
   `MoodlightShutdownSetting`, `FilterSaturationNotificationInterval`,
   `BSH.Common.Setting.Favorite.001/002.Functionality` (disabled by default)
 
-### 7. Light entities no longer go unavailable on secondary-attribute changes
+### 7. Lights no longer go unavailable on entity-level availability flips
 
 **Files:** `light.py`
 
-Both the hood main light and the ambient light went `unavailable` whenever a
-secondary attribute entity (brightness / color / color-temperature) reported
-`available=false`. On Bosch hoods this happens routinely:
+Both the hood main light and the ambient light went `unavailable` whenever any
+of their backing entities reported `available=false`. On Bosch hoods this
+happens routinely:
 
 - The main light's `Cooking.Hood.Setting.ColorTemperaturePercent` is marked
   `available=false` in the DDF (despite the physical light supporting color temp).
+- The primary `Cooking.Common.Setting.Lighting` itself gets flipped
+  `available=false` by the appliance (e.g. when PowerState=Off), even though
+  writing it back to `On` is what we want to do in the first place.
 - Turning the ambient light off flips `AmbientLightBrightness` /
   `AmbientLightCustomColor` to `available=false`, dragging the parent light
   offline.
 
-Removed the secondary-entity `available` checks from `HCLight.available` — only
-the primary on/off entity's availability gates the light entity now. Attribute
-writes that the device rejects are already handled by the per-payload retry from
+`HCLight.available` now only gates on session connectivity — neither the primary
+nor the secondary entities' `available` flags can take the light offline. Write
+failures are still handled gracefully by `async_turn_on`'s per-payload retry from
 change #2.
 
 ### 8. Hood fan on/off uses PowerState
