@@ -26,7 +26,7 @@ from homeconnect_websocket.message import Action
 from homeconnect_websocket.message import Message as HC_Message
 
 from .entity import HCEntity
-from .helpers import create_entities, entity_is_available, error_decorator
+from .helpers import create_entities, error_decorator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,20 +111,11 @@ class HCLight(HCEntity, LightEntity):
 
     @property
     def available(self) -> bool:
-        available = super().available
-        if self._brightness_entity:
-            available &= entity_is_available(
-                self._brightness_entity, self.entity_description.available_access
-            )
-        if self._color_temperature_entity:
-            available &= entity_is_available(
-                self._color_temperature_entity, self.entity_description.available_access
-            )
-        if self._color_entity:
-            available &= entity_is_available(
-                self._color_entity, self.entity_description.available_access
-            )
-        return available
+        # Only the primary on/off entity gates availability. Secondary attribute
+        # entities (brightness, color, color_temp) frequently flip to
+        # available=false on Bosch hoods — that shouldn't take the whole light
+        # offline, since on/off and the attributes that ARE writable still work.
+        return super().available
 
     @property
     def is_on(self) -> bool | None:

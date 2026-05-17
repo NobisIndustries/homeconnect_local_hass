@@ -29,6 +29,35 @@ PARALLEL_UPDATES = 0
 
 PRESET_AUTO = "auto"
 
+# Same precedence as common.generate_power_switch — first match wins.
+_POWER_VALUE_MAPPINGS: tuple[tuple[str, str], ...] = (
+    ("On", "MainsOff"),
+    ("Standby", "MainsOff"),
+    ("On", "Off"),
+    ("On", "Standby"),
+    ("Standby", "Off"),
+)
+
+
+def _resolve_power_mapping(power_entity: HcEntity | None) -> tuple[str, str] | None:
+    """Pick the (on_value, off_value) pair that matches the entity's settable states."""
+    if power_entity is None or not power_entity.enum:
+        return None
+    if power_entity.min and power_entity.max:
+        settable = {
+            value
+            for key, value in power_entity.enum.items()
+            if power_entity.min <= int(key) <= power_entity.max
+        }
+    else:
+        settable = set(power_entity.enum.values())
+    if len(settable) != 2:
+        return None
+    for mapping in _POWER_VALUE_MAPPINGS:
+        if settable == set(mapping):
+            return mapping
+    return None
+
 
 class SpeedMapping(NamedTuple):
     """Mapping of entity name / value and speed."""
@@ -188,19 +217,42 @@ class HCHoodFan(HCEntity, FanEntity):
         if active_program_entity is not None and active_program_entity not in self._entities:
             self._entities.append(active_program_entity)
 
+        # Hood power: writing PowerState mirrors what the dedicated Power switch does
+        # and is what actually turns the appliance on/off. Setting program options on a
+        # powered-down hood is a no-op.
+        self._power_entity = runtime_data.appliance.entities.get("BSH.Common.Setting.PowerState")
+        self._power_mapping = _resolve_power_mapping(self._power_entity)
+        if self._power_entity is not None and self._power_entity not in self._entities:
+            self._entities.append(self._power_entity)
+
     @property
     def _active_program_name(self) -> str | None:
         program = self._runtime_data.appliance.active_program
         return program.name if program is not None else None
 
     @property
+    def _is_powered_on(self) -> bool | None:
+        if self._power_entity is None or self._power_mapping is None:
+            return None
+        value = self._power_entity.value
+        if value == self._power_mapping[0]:
+            return True
+        if value == self._power_mapping[1]:
+            return False
+        return None
+
+    @property
     def is_on(self) -> bool | None:
+        powered = self._is_powered_on
+        if powered is False:
+            return False
         active = self._active_program_name
         if active == self.entity_description.auto_program:
             return True
         if active == self.entity_description.venting_program:
-            # On if any speed entity reports a non-zero value
             return any(entity.value_raw for entity in self._speed_entities.values())
+        # If we know the appliance is powered on but no recognized program is active,
+        # treat the fan as off (idle).
         return False
 
     @property
@@ -264,6 +316,16 @@ class HCHoodFan(HCEntity, FanEntity):
         program = self._runtime_data.appliance.programs[self.entity_description.auto_program]
         await program.start(options={}, override_options=True)
 
+    async def _ensure_powered_on(self) -> None:
+        """Write PowerState=On if it isn't already. No-op if PowerState isn't mapped."""
+        if (
+            self._power_entity is None
+            or self._power_mapping is None
+            or self._is_powered_on is True
+        ):
+            return
+        await self._power_entity.set_value(self._power_mapping[0])
+
     @error_decorator
     async def async_turn_on(
         self,
@@ -271,14 +333,20 @@ class HCHoodFan(HCEntity, FanEntity):
         preset_mode: str | None = None,
         **kwargs: Any,  # noqa: ARG002
     ) -> None:
+        await self._ensure_powered_on()
         if preset_mode:
             await self.async_set_preset_mode(preset_mode)
             return
         if percentage is None or percentage == 0:
-            # Default to slowest speed on a bare turn-on.
             percentage = ranged_value_to_percentage(self._speed_range, 1)
         await self.async_set_percentage(percentage)
 
     @error_decorator
     async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ARG002
+        # PowerState=Off is what the dedicated Power switch does and is the only
+        # write that reliably stops the hood. Falls back to starting Venting at
+        # level 0 when PowerState isn't mappable on this appliance.
+        if self._power_entity is not None and self._power_mapping is not None:
+            await self._power_entity.set_value(self._power_mapping[1])
+            return
         await self._start_venting(0)

@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.1`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.2`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -145,6 +145,45 @@ under `EntityCategory.CONFIG`:
   `WorkingLightShutdownSetting`, `MoodlightStartupSetting`,
   `MoodlightShutdownSetting`, `FilterSaturationNotificationInterval`,
   `BSH.Common.Setting.Favorite.001/002.Functionality` (disabled by default)
+
+### 7. Light entities no longer go unavailable on secondary-attribute changes
+
+**Files:** `light.py`
+
+Both the hood main light and the ambient light went `unavailable` whenever a
+secondary attribute entity (brightness / color / color-temperature) reported
+`available=false`. On Bosch hoods this happens routinely:
+
+- The main light's `Cooking.Hood.Setting.ColorTemperaturePercent` is marked
+  `available=false` in the DDF (despite the physical light supporting color temp).
+- Turning the ambient light off flips `AmbientLightBrightness` /
+  `AmbientLightCustomColor` to `available=false`, dragging the parent light
+  offline.
+
+Removed the secondary-entity `available` checks from `HCLight.available` — only
+the primary on/off entity's availability gates the light entity now. Attribute
+writes that the device rejects are already handled by the per-payload retry from
+change #2.
+
+### 8. Hood fan on/off uses PowerState
+
+**Files:** `fan.py`
+
+The HA fan toggle was a no-op because starting `Hood.Venting` with `VentingLevel=0`
+doesn't actually power down a Bosch hood (the appliance stays in standby waiting
+for the program). The user's working Power switch already writes
+`BSH.Common.Setting.PowerState` — the fan now does the same:
+
+- `async_turn_on`: writes `PowerState=On` first (no-op if already on), then sets
+  speed / preset.
+- `async_turn_off`: writes `PowerState=Off` (falls back to Venting level 0 only on
+  appliances where PowerState isn't a 2-state on/off mapping).
+- `is_on` consults PowerState — when off, the fan reports off regardless of any
+  lingering program state.
+
+PowerState mapping resolution mirrors `common.generate_power_switch`
+(`POWER_SWITCH_VALUE_MAPINGS` precedence: `On/MainsOff`, `Standby/MainsOff`,
+`On/Off`, `On/Standby`, `Standby/Off`). For DWK91LT65 this resolves to `On/Off`.
 
 ## Open items / not yet done
 
