@@ -51,6 +51,22 @@ async def async_setup_entry(
     async_add_entites(entities)
 
 
+HOOD_COLOR_TEMPERATURE_ENTITY = "Cooking.Hood.Setting.ColorTemperature"
+
+# Explicit kelvin anchor for each ColorTemperature enum step.
+# raw 1 = warm, raw 5 = cold. Slider min/max are the warm/cold endpoints.
+# Anchors are evenly spaced across the slider range for predictable round-trips.
+HOOD_COLOR_TEMP_KELVIN_BY_RAW: dict[int, int] = {
+    1: 2700,
+    2: 3525,
+    3: 4350,
+    4: 5175,
+    5: 6000,
+}
+HOOD_COLOR_TEMP_SLIDER_MIN_KELVIN = HOOD_COLOR_TEMP_KELVIN_BY_RAW[1]
+HOOD_COLOR_TEMP_SLIDER_MAX_KELVIN = HOOD_COLOR_TEMP_KELVIN_BY_RAW[5]
+
+
 class HCLight(HCEntity, LightEntity):
     """Light Entity."""
 
@@ -60,9 +76,9 @@ class HCLight(HCEntity, LightEntity):
     _color_entity: HcEntity | None = None
     _color_mode_entity: HcEntity | None = None
     _color_temp_inverted: bool = False
-    # When the color-temp entity is a discrete enum (Bosch hoods), the slider maps
-    # to value_raw 1..5 (warm..cold). The 0 = "custom" slot is read-only fallback.
-    _color_temp_enum_range: tuple[int, int] | None = None
+    # Hood color-temp slider uses an explicit kelvin-to-enum lookup instead of
+    # the percent-based scaling used for other appliances.
+    _is_hood_color_temp: bool = False
 
     def __init__(
         self,
@@ -83,14 +99,12 @@ class HCLight(HCEntity, LightEntity):
             self._entities.append(self._color_temperature_entity)
             # Hood color temperature is the discrete ColorTemperature enum
             # (custom/warm/warmToNeutral/neutral/neutralToCold/cold, raw 0..5).
-            # Map the kelvin slider to enum 1..5. Per empirical testing on
-            # DWK91LT65 the desired axis is inverted vs HA's convention:
-            # 2000 K (slider min) -> raw 5 (cold), 6535 K (slider max) ->
-            # raw 1 (warm). Slider direction matches the cooktop hood's
-            # physical "intensity" interpretation.
-            if self._color_temperature_entity.name == "Cooking.Hood.Setting.ColorTemperature":
-                self._color_temp_enum_range = (1, 5)
-                self._color_temp_inverted = True
+            # Use a fixed kelvin lookup table (see HOOD_COLOR_TEMP_KELVIN_BY_RAW)
+            # rather than HA's default scaling — the enum is discrete and the
+            # scale math kept landing one step off at the endpoints.
+            self._is_hood_color_temp = (
+                self._color_temperature_entity.name == HOOD_COLOR_TEMPERATURE_ENTITY
+            )
 
         if entity_description.color_entity is not None:
             self._color_entity = self._runtime_data.appliance.entities[
@@ -110,8 +124,12 @@ class HCLight(HCEntity, LightEntity):
         elif self._color_temperature_entity and self._brightness_entity:
             self._attr_supported_color_modes = {ColorMode.COLOR_TEMP}
             self._attr_color_mode = ColorMode.COLOR_TEMP
-            self._attr_max_color_temp_kelvin = DEFAULT_MAX_KELVIN
-            self._attr_min_color_temp_kelvin = DEFAULT_MIN_KELVIN
+            if self._is_hood_color_temp:
+                self._attr_min_color_temp_kelvin = HOOD_COLOR_TEMP_SLIDER_MIN_KELVIN
+                self._attr_max_color_temp_kelvin = HOOD_COLOR_TEMP_SLIDER_MAX_KELVIN
+            else:
+                self._attr_max_color_temp_kelvin = DEFAULT_MAX_KELVIN
+                self._attr_min_color_temp_kelvin = DEFAULT_MIN_KELVIN
         elif self._brightness_entity:
             self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
             self._attr_color_mode = ColorMode.BRIGHTNESS
@@ -153,17 +171,9 @@ class HCLight(HCEntity, LightEntity):
     def color_temp_kelvin(self) -> int | None:
         if self._color_temperature_entity is None:
             return None
-        if self._color_temp_enum_range is not None:
+        if self._is_hood_color_temp:
             raw = self._color_temperature_entity.value_raw
-            low, high = self._color_temp_enum_range
-            if not isinstance(raw, int) or not (low <= raw <= high):
-                # 0 (custom) or unset — no meaningful slider position.
-                return None
-            return scale_ranged_value_to_int_range(
-                (high, low) if self._color_temp_inverted else (low, high),
-                (DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN),
-                raw,
-            )
+            return HOOD_COLOR_TEMP_KELVIN_BY_RAW.get(raw)
         value = self._color_temperature_entity.value
         if value is None:
             return None
@@ -223,18 +233,13 @@ class HCLight(HCEntity, LightEntity):
 
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
             kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
-            if self._color_temp_enum_range is not None:
-                low, high = self._color_temp_enum_range
-                target_range = (high, low) if self._color_temp_inverted else (low, high)
-                # Use the slider's true min/max and round so the endpoints land
-                # cleanly on the boundary enum values instead of being truncated
-                # one step short.
-                raw_value = scale_ranged_value_to_int_range(
-                    (DEFAULT_MIN_KELVIN, DEFAULT_MAX_KELVIN),
-                    target_range,
-                    kelvin,
+            if self._is_hood_color_temp:
+                # Pick the enum step whose anchor kelvin is closest to the
+                # requested value. No scaling math, no off-by-one risk.
+                value_in_range = min(
+                    HOOD_COLOR_TEMP_KELVIN_BY_RAW,
+                    key=lambda raw: abs(HOOD_COLOR_TEMP_KELVIN_BY_RAW[raw] - kelvin),
                 )
-                value_in_range = max(low, min(high, round(raw_value)))
             else:
                 target_range = (101, 0) if self._color_temp_inverted else (1, 100)
                 value_in_range = int(

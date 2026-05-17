@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.10`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.11`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -222,18 +222,24 @@ The slider used to write `Cooking.Hood.Setting.ColorTemperaturePercent`.
 Bosch firmware rejects that endpoint regardless of mode (we also tried
 bundling a `ColorTemperature=0`/custom pre-write — still 400). Switched
 the slider to drive the discrete `Cooking.Hood.Setting.ColorTemperature`
-enum directly, mapping the kelvin range onto raw values 1..5
-(warm..cold). The axis is inverted vs HA's kelvin convention per
-empirical testing on the DWK91LT65: 2000 K (slider min) → raw 5
-(cold), 6535 K (slider max) → raw 1 (warm). On the write path the
-slider endpoint clamps cleanly: source range is `(MIN_K, MAX_K)` (not
-`MIN_K+1`, which was a leftover from the percent scaling), and the
-scaled value is rounded (not truncated) before being clamped into
-1..5. Without these, the slider's bottom-end kelvin landed on raw 4
-(neutralToCold) instead of 5 (cold).
+enum directly. The slider's min/max are restricted to the enum's
+actual range (2700 K..6000 K) and each enum step has a hardcoded
+kelvin anchor — read picks the anchor for the current raw value,
+write picks the raw whose anchor is closest to the requested kelvin.
+Earlier attempts to derive the mapping via `scale_ranged_value_to_int_range`
+kept landing one step short at the endpoints (warm→neutralToCold
+instead of warm→cold) because of int-truncation + source-range
+off-by-one. With explicit anchors there's no scaling math at all.
 
-The 0 = "custom" slot is read-only fallback (slider reports None when
-the appliance reports it).
+| raw | enum value     | kelvin anchor |
+| --- | -------------- | ------------- |
+| 1   | warm           | 2700 K        |
+| 2   | warmToNeutral  | 3525 K        |
+| 3   | neutral        | 4350 K        |
+| 4   | neutralToCold  | 5175 K        |
+| 5   | cold           | 6000 K        |
+
+The 0 = "custom" slot maps to `None` on read (slider hides itself).
 
 The parallel `select_hood_color_temperature` from change #3 is kept as
 a backup control — slider and select drive the same enum, just with
