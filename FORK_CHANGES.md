@@ -280,6 +280,15 @@ Python 3 and made the entire `config_flow` module unimportable. Parenthesized to
 `except (KeyError, ValueError):`. Other language files (fr/it/nl/no/ru/sv) don't
 yet have the `reconfigure` strings — they fall back to English.
 
+Also (pre-existing, surfaced during reconfigure testing): a failed connection in
+`async_step_test_connection` raised an **uncaught** `homeconnect_websocket`
+`ConnectionFailedError`, bubbling up as an unhandled aiohttp 500 instead of
+re-showing the form with `cannot_connect`. The `except` list only handled aiohttp/
+binascii/timeout errors; `homeconnect_websocket` 1.5.x wraps connect failures in its
+own `HCConnectionError` (parent of `ConnectionFailedError`). Added `HCConnectionError`
+to the `cannot_connect` branch — this fixes the normal setup flow too, not just
+reconfigure.
+
 ## Open items / not yet done
 
 - No automated tests for the new hood fan / program buttons (HA dev deps don't all
