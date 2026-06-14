@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.11`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.12`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -249,6 +249,36 @@ Supersedes the slider half of change #2: `ColorTemperaturePercent` is no
 longer referenced by the integration. The light entity's resilience
 fixes (per-payload retry, None-tolerant state getters, always-on-write)
 are still in place from #2 / #9 / #10.
+
+### 12. Reconfigure flow to change Appliance Host/IP (+ Python-3 except fix)
+
+**Files:** `config_flow.py`, `translations/en.json`, `translations/de.json`
+
+Upstream offered no way to edit an Appliance's Host/IP after initial setup. The
+host lives in `config_entry.data[CONF_HOST]` and was only settable via the
+first-run manual host step (shown *only on connection failure*) or via zeroconf
+auto-update — and zeroconf is gated on `CONF_MANUAL_HOST == False`, so a manually
+entered IP is never auto-corrected. A device whose DHCP lease changes (e.g. the
+dishwasher) becomes permanently unreachable with no UI remedy.
+
+- Added `async_step_reconfigure`, surfacing HA's standard "Reconfigure" button on
+  the integration's entry page. It seeds `self.data` from the existing entry
+  (profile, encryption keys, device id are reused — no zip re-upload), shows the
+  host form pre-filled with the current host, then reuses `async_step_test_connection`
+  to validate the new address before committing.
+- On success it writes only `{CONF_HOST, CONF_MANUAL_HOST: True}` via
+  `async_update_reload_and_abort` (pins the host so zeroconf won't overwrite it).
+  On connection failure it re-shows the `reconfigure` step with `cannot_connect`
+  rather than falling into the add-flow `host` step.
+- `self.data` is seeded from the entry only on first entry (`reconfigure_entry is
+  None`) so a typed-but-failed host survives the retry round-trip.
+- Translations: `reconfigure` step + `reconfigure_successful` abort (en + de).
+
+While here, fixed a **pre-existing Python-2-ism**: two `except KeyError, ValueError:`
+clauses (in `async_step_upload` and `async_step_set_data`) are a `SyntaxError` under
+Python 3 and made the entire `config_flow` module unimportable. Parenthesized to
+`except (KeyError, ValueError):`. Other language files (fr/it/nl/no/ru/sv) don't
+yet have the `reconfigure` strings — they fall back to English.
 
 ## Open items / not yet done
 

@@ -18,6 +18,13 @@
         "data": {
           "host": "Host / IP-Address"
         }
+      },
+      "reconfigure": {
+        "title": "Change Hostname / IP-Address",
+        "description": "Current Host: {host}\n\nEnter the new Hostname or IP-Address for your Appliance.",
+        "data": {
+          "host": "Host / IP-Address"
+        }
       }
     },
     "error": {
@@ -27,6 +34,7 @@
     "abort": {
       "auth_failed": "Authentication failed",
       "reauth_successful": "Re-authentication successful",
+      "reconfigure_successful": "Hostname / IP-Address updated successfully",
       "invalid_profile_file": "Profile File is invalid",
       "profile_file_parser_error": "Profile File is invalid: {error}",
       "appliance_not_in_profile_file": "Profile File dose not contain profile for this Appliance",

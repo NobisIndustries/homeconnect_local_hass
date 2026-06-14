@@ -112,6 +112,7 @@ class HomeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         self.data = {}
         self.appliances: dict[str, dict[str, dict | DeviceDescription]] = {}
         self.reauth_entry: HCConfigEntry = None
+        self.reconfigure_entry: HCConfigEntry = None
         self.global_config: HCConfig | None = None
 
     def _process_profile_file(
@@ -191,7 +192,7 @@ class HomeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                     reason="profile_file_parser_error",
                     description_placeholders={"error": exc.args[0]},
                 )
-            except KeyError, ValueError:
+            except (KeyError, ValueError):
                 return self.async_abort(reason="invalid_profile_file")
 
             if not self.errors:
@@ -296,6 +297,9 @@ class HomeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         finally:
             await appliance.close()
         if self.errors:
+            if self.reconfigure_entry:
+                _LOGGER.debug("Connection error, showing reconfigure step")
+                return await self.async_step_reconfigure()
             _LOGGER.debug("Connection error, showing host step")
             return await self.async_step_host()
         _LOGGER.debug("config vaild, adding config entry")
@@ -320,11 +324,16 @@ class HomeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_create_entry(self, data: dict) -> ConfigFlowResult:
-        """Create an config entry or update existing entry for reauth."""
+        """Create an config entry or update existing entry for reauth/reconfigure."""
         if self.reauth_entry:
             return self.async_update_reload_and_abort(
                 self.reauth_entry,
                 data_updates=data,
+            )
+        if self.reconfigure_entry:
+            return self.async_update_reload_and_abort(
+                self.reconfigure_entry,
+                data_updates={CONF_HOST: data[CONF_HOST], CONF_MANUAL_HOST: True},
             )
         return self.async_create_entry(title=data[CONF_NAME], data=data)
 
@@ -334,6 +343,33 @@ class HomeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         self.reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         self.data[CONF_HOST] = self.reauth_entry.data[CONF_HOST]
         return await self.async_step_upload()
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Reconfigure flow: change the Appliance Host/IP without re-uploading the profile."""
+        _LOGGER.debug("Reconfigure flow initialized")
+        if self.reconfigure_entry is None:
+            self.reconfigure_entry = self.hass.config_entries.async_get_entry(
+                self.context["entry_id"]
+            )
+            # Seed data from the existing entry so async_step_test_connection has the
+            # profile, encryption keys and device id; only the Host is editable.
+            self.data = dict(self.reconfigure_entry.data)
+
+        if user_input is not None:
+            self.data[CONF_MANUAL_HOST] = True
+            self.data[CONF_HOST] = user_input[CONF_HOST]
+            _LOGGER.debug("User reconfigured Host to: %s", self.data[CONF_HOST])
+            return await self.async_step_test_connection()
+
+        schema = self.add_suggested_values_to_schema(
+            CONFIG_HOST_SCHEMA, {CONF_HOST: self.data[CONF_HOST]}
+        )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=self.errors,
+            description_placeholders={CONF_HOST: self.data[CONF_HOST]},
+        )
 
     async def async_step_set_data(
         self, user_input: dict[str, Any] | None = None
@@ -352,7 +388,7 @@ class HomeConnectConfigFlow(ConfigFlow, domain=DOMAIN):
             self.data[CONF_NAME] = f"{appliance_info['brand']} {appliance_info['type']}"
 
             self._set_encryption_keys(appliance_info)
-        except KeyError, ValueError:
+        except (KeyError, ValueError):
             return self.async_abort(reason="invalid_profile_file")
 
         return await self.async_step_test_connection()

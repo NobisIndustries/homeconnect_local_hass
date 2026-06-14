@@ -18,6 +18,13 @@
         "data": {
           "host": "Host / IP-Adresse"
         }
+      },
+      "reconfigure": {
+        "title": "Hostnamen / IP-Adresse ändern",
+        "description": "Aktueller Host: {host}\n\nGeben Sie den neuen Hostnamen oder die neue IP-Adresse Ihres Geräts ein.",
+        "data": {
+          "host": "Host / IP-Adresse"
+        }
       }
     },
     "error": {
@@ -27,6 +34,7 @@
     "abort": {
       "auth_failed": "Authentifizierung fehlgeschlagen",
       "reauth_successful": "Erneute Authentifizierung war erfolgreich",
+      "reconfigure_successful": "Hostname / IP-Adresse erfolgreich aktualisiert",
       "invalid_profile_file": "Profildatei ist ungültig",
       "profile_file_parser_error": "Profildatei ist ungültig: {error}",
       "appliance_not_in_profile_file": "Profildatei enthält kein Profil für dieses Gerät",
