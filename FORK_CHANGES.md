@@ -289,6 +289,68 @@ own `HCConnectionError` (parent of `ConnectionFailedError`). Added `HCConnection
 to the `cannot_connect` branch — this fixes the normal setup flow too, not just
 reconfigure.
 
+### 13. Hood fan state gated on OperationState (firmware DDF 6-4 regression)
+
+**Files:** `fan.py`
+
+After a BSH firmware update (DDF version 4-4 -> 6-4, swVersion 5.19.0.11) the main
+fan control stopped working in HA while lights and power kept working. Diagnosed by
+connecting directly to the appliance and replaying the writes.
+
+**Root cause:** the new firmware *latches* `BSH.Common.Root.ActiveProgram` and
+`Cooking.Common.Option.Hood.VentingLevel` across power-off. With the hood switched
+off, the appliance still reports:
+
+```
+PowerState='Off'  OperationState='Inactive'
+ActiveProgram=55307 (Cooking.Common.Program.Hood.Venting)  VentingLevel='FanStage05'
+```
+
+On DDF 4-4 these cleared when the program ended. `is_on`/`percentage` read them as
+truth, so as soon as the hood was powered on, the fan entity reported **on at 100%**
+even though nothing was running. HA does not dispatch `async_turn_on` (or a
+percentage change to a value it thinks is already set) on an entity it already
+believes is in that state, so the toggle and the speed slider became no-ops.
+
+**Not the cause** (ruled out by direct testing against the appliance):
+
+- The protocol still works. `POST /ro/activeProgram` with
+  `{program: 55307, options: [{55308: <level>}, {55305: 0}]}` is accepted and the fan
+  physically changes speed. Both `override_options=True` and `False` work.
+- `validate="true"`, newly added to `activeProgram`/`selectedProgram` in the DDF, is
+  parsed by `homeconnect_websocket` but never acted on, and does not reject the
+  partial option set `_start_venting` sends.
+- Enum types were renumbered (`0203`->`1018`, `0204`->`1019`, `1000`->`101A`, plus
+  `1016`/`1017`) but these are legitimate `subsetOf` declarations in the DDF's
+  `enumerationTypeList` and resolve correctly; `PowerState` still yields `On`/`Off`
+  and `_resolve_power_mapping` still returns `('On', 'Off')`.
+- No UID was reused or renumbered. Profile changes are limited to
+  `SensorSensitivity` -> `AutomaticSensitivity`, the removal of
+  `RegenerativeCarbonFilterLifeTimeReset`, and `ProgramProgress` dropping out of
+  Venting's option list.
+
+**Fix:** `BSH.Common.Status.OperationState` is the only entity that distinguishes
+"venting is running" from "venting was the last program". `HCHoodFan` now tracks it
+(`_is_program_running`, running = `Run`/`DelayedStart`/`Pause`/`ActionRequired`) and:
+
+- `is_on` returns `False` unless power is *known* on (`_is_powered_on is not True`
+  now short-circuits, so an unknown power state no longer reports the fan as on) and
+  OperationState doesn't say idle.
+- `percentage` returns 0 instead of echoing the latched `VentingLevel`.
+- `preset_mode` returns `None` instead of a stale `auto`.
+
+When `OperationState` isn't exposed, `_is_program_running` returns `None` and the old
+ActiveProgram/level behaviour is kept as a fallback.
+
+**Device limitation confirmed:** while venting runs, the hood *accepts but ignores*
+every attempt to stop it short of cutting power — starting Venting with
+`VentingLevel=0`, writing `VentingLevel=0` to `/ro/values`, and POSTing program `0`
+to `/ro/activeProgram` all return `RESPONSE` with the fan still physically running.
+`async_turn_off` writing `PowerState=Off` (change #8) therefore remains the only
+option. This is acceptable on this appliance: `PowerState` only affects venting,
+the hood lights are unaffected and stay on. Also observed: the hood briefly applies the program's declared
+`default="2"` before settling to the requested level.
+
 ## Open items / not yet done
 
 - No automated tests for the new hood fan / program buttons (HA dev deps don't all
@@ -300,3 +362,6 @@ reconfigure.
 - Other Bosch/Siemens hood models may have `IntensiveLevel` populated with real
   Stage04/Stage05 values — the new `HCHoodFan` mapping handles that already, but it
   hasn't been verified against a profile that uses the split.
+- Fan speed-down while venting runs is not possible on DDF 6-4 (see #12); the
+  appliance ignores level-lowering writes. Only raising the level and powering off
+  were verified to take effect. Lowering speed therefore requires a power cycle.

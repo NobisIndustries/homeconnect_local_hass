@@ -29,6 +29,11 @@ PARALLEL_UPDATES = 0
 
 PRESET_AUTO = "auto"
 
+# OperationState values that mean a program is actually executing. Anything else
+# (Inactive, Ready, Finished, ...) means the fan is not running, even when
+# ActiveProgram still points at Venting.
+_RUNNING_OPERATION_STATES = frozenset({"Run", "DelayedStart", "Pause", "ActionRequired"})
+
 # Same precedence as common.generate_power_switch — first match wins.
 _POWER_VALUE_MAPPINGS: tuple[tuple[str, str], ...] = (
     ("On", "MainsOff"),
@@ -225,6 +230,19 @@ class HCHoodFan(HCEntity, FanEntity):
         if self._power_entity is not None and self._power_entity not in self._entities:
             self._entities.append(self._power_entity)
 
+        # OperationState is the only entity that distinguishes "venting is actually
+        # running" from "venting was the last program that ran". Newer hood firmware
+        # (DDF 6-4) latches ActiveProgram and VentingLevel across power-off, so those
+        # two alone report a stopped fan as running. See FORK_CHANGES.md.
+        self._operation_state_entity = runtime_data.appliance.entities.get(
+            "BSH.Common.Status.OperationState"
+        )
+        if (
+            self._operation_state_entity is not None
+            and self._operation_state_entity not in self._entities
+        ):
+            self._entities.append(self._operation_state_entity)
+
     @property
     def _active_program_name(self) -> str | None:
         program = self._runtime_data.appliance.active_program
@@ -242,9 +260,29 @@ class HCHoodFan(HCEntity, FanEntity):
         return None
 
     @property
+    def _is_program_running(self) -> bool | None:
+        """Whether a program is actually executing, per OperationState.
+
+        Returns None when OperationState isn't exposed, so callers can fall back to
+        the (less reliable) ActiveProgram/level reading.
+        """
+        if self._operation_state_entity is None:
+            return None
+        value = self._operation_state_entity.value
+        if value is None:
+            return None
+        return value in _RUNNING_OPERATION_STATES
+
+    @property
     def is_on(self) -> bool | None:
         powered = self._is_powered_on
-        if powered is False:
+        if powered is not True:
+            # Powered off, or power state unknown: never report the fan as running.
+            # ActiveProgram/VentingLevel latch across power-off on newer firmware,
+            # so they cannot stand in for power state here.
+            return False
+        running = self._is_program_running
+        if running is False:
             return False
         active = self._active_program_name
         if active == self.entity_description.auto_program:
@@ -257,12 +295,19 @@ class HCHoodFan(HCEntity, FanEntity):
 
     @property
     def preset_mode(self) -> str | None:
+        if self._is_powered_on is not True or self._is_program_running is False:
+            # ActiveProgram latches across power-off; don't report a stale preset.
+            return None
         if self._active_program_name == self.entity_description.auto_program:
             return PRESET_AUTO
         return None
 
     @property
     def percentage(self) -> int | None:
+        if self._is_powered_on is not True or self._is_program_running is False:
+            # VentingLevel latches at its last value across power-off on newer
+            # firmware; reporting it here would show a stopped fan at full speed.
+            return 0
         active = self._active_program_name
         if active == self.entity_description.auto_program:
             return None
@@ -346,6 +391,12 @@ class HCHoodFan(HCEntity, FanEntity):
         # PowerState=Off is what the dedicated Power switch does and is the only
         # write that reliably stops the hood. Falls back to starting Venting at
         # level 0 when PowerState isn't mappable on this appliance.
+        #
+        # Verified against DWK91LT65 on DDF 6-4: while venting runs, the appliance
+        # ACCEPTS but ignores every attempt to stop it short of cutting power —
+        # starting Venting with VentingLevel=0, writing VentingLevel=0 to /ro/values,
+        # and POSTing program 0 to /ro/activeProgram all returned RESPONSE with the
+        # fan still running. Turning the fan off therefore powers the hood off.
         if self._power_entity is not None and self._power_mapping is not None:
             await self._power_entity.set_value(self._power_mapping[1])
             return
