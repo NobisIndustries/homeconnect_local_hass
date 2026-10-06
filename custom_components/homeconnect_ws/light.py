@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +14,8 @@ from homeassistant.components.light import (
     LightEntity,
 )
 from homeassistant.components.light.const import DEFAULT_MAX_KELVIN, DEFAULT_MIN_KELVIN
+from homeassistant.core import callback as ha_callback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.util.color import (
     brightness_to_value,
     color_rgb_to_hex,
@@ -31,7 +34,9 @@ from .helpers import create_entities, error_decorator
 _LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
+    from datetime import datetime
+
+    from homeassistant.core import CALLBACK_TYPE, HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
     from homeconnect_websocket.entities import Entity as HcEntity
 
@@ -66,6 +71,10 @@ HOOD_COLOR_TEMP_KELVIN_BY_RAW: dict[int, int] = {
 HOOD_COLOR_TEMP_SLIDER_MIN_KELVIN = HOOD_COLOR_TEMP_KELVIN_BY_RAW[1]
 HOOD_COLOR_TEMP_SLIDER_MAX_KELVIN = HOOD_COLOR_TEMP_KELVIN_BY_RAW[5]
 
+# How long a commanded on/off state is reported optimistically while waiting for
+# the appliance to confirm it. See HCLight._pending_is_on.
+PENDING_STATE_TIMEOUT = 10
+
 
 class HCLight(HCEntity, LightEntity):
     """Light Entity."""
@@ -79,6 +88,14 @@ class HCLight(HCEntity, LightEntity):
     # Hood color-temp slider uses an explicit kelvin-to-enum lookup instead of
     # the percent-based scaling used for other appliances.
     _is_hood_color_temp: bool = False
+    # Last commanded on/off state, reported until the appliance confirms it.
+    # Bosch hoods take 1-2 s (sometimes more) to acknowledge a light write; until
+    # then the backing entity still holds the old value. Without this, a scene
+    # applied in that window sees the light in its target state and skips it:
+    # e.g. an "on" scene followed ~1 s later by an "off" scene leaves the hood
+    # light on, because reproduce_state saw it as already off.
+    _pending_is_on: bool | None = None
+    _pending_timeout: CALLBACK_TYPE | None = None
 
     def __init__(
         self,
@@ -86,6 +103,8 @@ class HCLight(HCEntity, LightEntity):
         runtime_data: HCData,
     ) -> None:
         super().__init__(entity_description, runtime_data)
+        # Serializes writes so a turn_off can't overtake an in-flight turn_on.
+        self._write_lock = asyncio.Lock()
         if entity_description.brightness_entity is not None:
             self._brightness_entity = self._runtime_data.appliance.entities[
                 entity_description.brightness_entity
@@ -153,7 +172,43 @@ class HCLight(HCEntity, LightEntity):
 
     @property
     def is_on(self) -> bool | None:
+        if self._pending_is_on is not None:
+            return self._pending_is_on
         return bool(self._entity.value)
+
+    def _set_pending(self, target: bool) -> None:
+        """Report target state now, until the appliance confirms it or it times out."""
+        self._clear_pending()
+        self._pending_is_on = target
+        self._pending_timeout = async_call_later(
+            self.hass, PENDING_STATE_TIMEOUT, self._pending_timed_out
+        )
+        self.async_write_ha_state()
+
+    def _clear_pending(self) -> None:
+        self._pending_is_on = None
+        if self._pending_timeout is not None:
+            self._pending_timeout()
+            self._pending_timeout = None
+
+    @ha_callback
+    def _pending_timed_out(self, _now: datetime) -> None:
+        self._pending_timeout = None
+        self._pending_is_on = None
+        self.async_write_ha_state()
+
+    async def callback(self, entity: HcEntity) -> None:
+        if (
+            self._pending_is_on is not None
+            and entity is self._entity
+            and bool(entity.value) == self._pending_is_on
+        ):
+            self._clear_pending()
+        await super().callback(entity)
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._clear_pending()
+        await super().async_will_remove_from_hass()
 
     @property
     def brightness(self) -> int | None:
@@ -196,8 +251,32 @@ class HCLight(HCEntity, LightEntity):
             return match_max_scale((255,), rgb)
         return None
 
-    @error_decorator
     async def async_turn_on(self, **kwargs: Any) -> None:
+        self._set_pending(True)
+        try:
+            async with self._write_lock:
+                await self._async_turn_on(**kwargs)
+        except Exception:
+            # Roll back, unless a newer command has replaced the pending state.
+            if self._pending_is_on is True:
+                self._clear_pending()
+                self.async_write_ha_state()
+            raise
+
+    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ARG002
+        self._set_pending(False)
+        try:
+            async with self._write_lock:
+                await self._async_turn_off()
+        except Exception:
+            # Roll back, unless a newer command has replaced the pending state.
+            if self._pending_is_on is False:
+                self._clear_pending()
+                self.async_write_ha_state()
+            raise
+
+    @error_decorator
+    async def _async_turn_on(self, **kwargs: Any) -> None:
         brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness)
         rgb = kwargs.get(ATTR_RGB_COLOR, self.rgb_color)
 
@@ -280,5 +359,5 @@ class HCLight(HCEntity, LightEntity):
             )
 
     @error_decorator
-    async def async_turn_off(self, **kwargs: Any) -> None:
+    async def _async_turn_off(self) -> None:
         await self._entity.set_value(False)

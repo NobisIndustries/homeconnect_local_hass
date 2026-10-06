@@ -351,6 +351,32 @@ option. This is acceptable on this appliance: `PowerState` only affects venting,
 the hood lights are unaffected and stay on. Also observed: the hood briefly applies the program's declared
 `default="2"` before settling to the requested level.
 
+### 14. Hood light: optimistic on/off state so scenes don't skip it
+
+**Files:** `light.py`
+
+**Symptom:** after the DDF 6-4 update the hood lights often stayed on after an
+automation turned the rest of the kitchen off. Switching them off by hand worked.
+
+**Root cause:** `is_on` only reflected the appliance's confirmed `Lighting` value,
+and the hood takes 1-2 s (occasionally ~7 s) to confirm a write. HA's scene
+`reproduce_state` skips any entity already in its target state. When an "on" scene
+was followed within that window by an "off" scene (two kitchen motion-off
+automations firing ~0.8 s apart), the off scene still saw the hood as `off` and
+sent nothing. The delayed "on" then landed and the light stayed on. Observed in
+recorder history (2026-09-29/30): every stuck period, 18 of them lasting 1-65 min,
+began with exactly that on/off burst.
+
+**Fix:**
+
+- `async_turn_on`/`async_turn_off` set `_pending_is_on` and write HA state at once.
+  `is_on` reports the pending value until the appliance reports a matching value
+  (via the entity callback), or for at most `PENDING_STATE_TIMEOUT` (10 s).
+- A per-light `asyncio.Lock` serializes writes so an off can't overtake an
+  in-flight on.
+- A failed write rolls the pending state back, unless a newer command has already
+  replaced it.
+
 ## Open items / not yet done
 
 - No automated tests for the new hood fan / program buttons (HA dev deps don't all
