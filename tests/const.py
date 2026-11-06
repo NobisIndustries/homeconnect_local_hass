@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from custom_components.homeconnect_ws.const import (
+from custom_components.homeconnect_ws_fork.const import (
     CONF_AES_IV,
     CONF_PSK,
 )
-from custom_components.homeconnect_ws.entity_descriptions import (
+from custom_components.homeconnect_ws_fork.entity_descriptions import (
     HCBinarySensorEntityDescription,
     HCButtonEntityDescription,
     HCFanEntityDescription,

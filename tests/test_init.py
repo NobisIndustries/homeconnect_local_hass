@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import ANY, Mock
 
-from custom_components.homeconnect_ws import coordinator
-from custom_components.homeconnect_ws.const import DOMAIN
+from custom_components.homeconnect_ws_fork import coordinator
+from custom_components.homeconnect_ws_fork.const import DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeconnect_websocket.testutils import MockAppliance
 from pytest_homeassistant_custom_component.common import MockConfigEntry

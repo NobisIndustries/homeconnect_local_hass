@@ -1,5 +1,5 @@
 {
-  "domain": "homeconnect_ws",
+  "domain": "homeconnect_ws_fork",
   "name": "Home Connect Local (Fabian fork)",
   "after_dependencies": [
     "file_upload"
@@ -13,13 +13,13 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/NobisIndustries/homeconnect_local_hass/issues",
   "loggers": [
-    "custom_components.homeconnect_ws",
+    "custom_components.homeconnect_ws_fork",
     "homeconnect_websocket"
   ],
   "requirements": [
     "homeconnect-websocket==1.5.3"
   ],
-  "version": "1.0.5b10+hood.14",
+  "version": "1.0.5b10+hood.15",
   "zeroconf": [
     "_homeconnect._tcp.local."
   ]

@@ -80,7 +80,7 @@ class HomeConnectCoordinator(DataUpdateCoordinator):
         self.config_entry.async_create_background_task(
             self.hass,
             self._connect(),
-            name=f"homeconnect_ws connect {self.config_entry.data[CONF_HOST]}",
+            name=f"homeconnect_ws_fork connect {self.config_entry.data[CONF_HOST]}",
         )
 
     async def _connect(self) -> None:

@@ -4,7 +4,7 @@ start_program:
       required: true
       selector:
         device:
-          integration: homeconnect_ws
+          integration: homeconnect_ws_fork
     start_in:
       required: false
       selector:
@@ -20,7 +20,7 @@ set_start_in:
       required: true
       selector:
         device:
-          integration: homeconnect_ws
+          integration: homeconnect_ws_fork
     start_in:
       required: true
       selector:
@@ -32,7 +32,7 @@ set_finish_in:
       required: true
       selector:
         device:
-          integration: homeconnect_ws
+          integration: homeconnect_ws_fork
     finish_in:
       required: true
       selector:

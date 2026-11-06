@@ -11,7 +11,7 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.switch import SwitchDeviceClass
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTemperature, UnitOfTime
 
-from custom_components.homeconnect_ws.helpers import get_groups_from_regex
+from custom_components.homeconnect_ws_fork.helpers import get_groups_from_regex
 
 from .descriptions_definitions import (
     EntityDescriptions,

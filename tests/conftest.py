@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from zipfile import ZipFile
 
 import pytest
-from custom_components import homeconnect_ws
-from custom_components.homeconnect_ws import coordinator, entity_descriptions
+from custom_components import homeconnect_ws_fork
+from custom_components.homeconnect_ws_fork import coordinator, entity_descriptions
 from homeconnect_websocket.testutils import MockAppliance
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ def patch_entity_description(monkeypatch: pytest.MonkeyPatch) -> None:
         entity_descriptions, "get_available_entities", Mock(return_value=ENTITY_DESCRIPTIONS)
     )
     monkeypatch.setattr(
-        homeconnect_ws, "get_available_entities", Mock(return_value=ENTITY_DESCRIPTIONS)
+        homeconnect_ws_fork, "get_available_entities", Mock(return_value=ENTITY_DESCRIPTIONS)
     )
 
 
@@ -53,7 +53,7 @@ def patch_entity_description(monkeypatch: pytest.MonkeyPatch) -> None:
 def mock_setup_entry() -> Generator[AsyncMock]:
     """Override async_setup_entry."""
     with patch(
-        "custom_components.homeconnect_ws.async_setup_entry", return_value=True
+        "custom_components.homeconnect_ws_fork.async_setup_entry", return_value=True
     ) as mock_setup_entry:
         yield mock_setup_entry
 
@@ -83,7 +83,7 @@ def mock_process_uploaded_file(
     ctx_mock = MagicMock()
     ctx_mock.__enter__.return_value = create_profile_file
     with patch(
-        "custom_components.homeconnect_ws.config_flow.process_uploaded_file",
+        "custom_components.homeconnect_ws_fork.config_flow.process_uploaded_file",
         return_value=ctx_mock,
     ) as mock_upload:
         yield mock_upload
@@ -107,7 +107,7 @@ def mock_process_profile_file() -> Generator[MagicMock]:
         },
     }
     with patch(
-        "custom_components.homeconnect_ws.config_flow.HomeConnectConfigFlow._process_profile_file",
+        "custom_components.homeconnect_ws_fork.config_flow.HomeConnectConfigFlow._process_profile_file",
         return_value=deepcopy(device_description),
     ) as mock_upload:
         yield mock_upload

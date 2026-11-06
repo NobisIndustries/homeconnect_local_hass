@@ -8,7 +8,7 @@ The **Home Connect Local** allows users to integrate their home appliances suppo
 
 2. Click the button bellow and click 'Download' to install the Integration:
 
-    [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?repository=homeconnect_local_hass&owner=chris-mc1)
+    [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?repository=homeconnect_local_hass&owner=NobisIndustries)
 
 3. Restart Home Assistant.
 
@@ -21,7 +21,7 @@ To use this integration, you must first create a Home Connect account and connec
 1. Use the [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) to download your Appliance profiles, select "openHAB" as target. The downloaded ZIP-file contains each Appliance encryption Key and feature descriptions
 2. Click the button below or use "Add Integration" in Home Assistant and select "Home Connect Local".
 
-    [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=homeconnect_ws)
+    [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=homeconnect_ws_fork)
 
 3. Upload the downloaded Profile file.
 4. Select the Appliance you want to setup.
@@ -64,8 +64,8 @@ Use one of these two methods enable debug logging:
         ```yaml
         logger:
         logs:
-            custom_components.homeconnect_ws: debug # Home Connect Local Integration
-            homeconnect_ws: debug
+            custom_components.homeconnect_ws_fork: debug # Home Connect Local Integration
+            homeconnect_ws_fork: debug
             homeconnect_websocket: debug # Homeconnect websocket Python package
         ```
 

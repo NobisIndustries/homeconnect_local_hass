@@ -6,7 +6,7 @@ from typing import Final
 
 from homeassistant.const import Platform
 
-DOMAIN: Final = "homeconnect_ws"
+DOMAIN: Final = "homeconnect_ws_fork"
 PLATFORMS: Final = [
     Platform.BINARY_SENSOR,
     Platform.SENSOR,

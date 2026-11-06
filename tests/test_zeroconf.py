@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 from unittest.mock import ANY, Mock
 from uuid import uuid4
 
-from custom_components.homeconnect_ws import config_flow
-from custom_components.homeconnect_ws.const import (
+from custom_components.homeconnect_ws_fork import config_flow
+from custom_components.homeconnect_ws_fork.const import (
     CONF_AES_IV,
     CONF_FILE,
     CONF_MANUAL_HOST,

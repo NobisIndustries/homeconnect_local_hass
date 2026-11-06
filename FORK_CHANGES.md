@@ -1,6 +1,6 @@
 # Fork changes
 
-Current fork version: **`1.0.5b10+hood.12`** (upstream baseline `1.0.5b10`, PEP-440
+Current fork version: **`1.0.5b10+hood.15`** (upstream baseline `1.0.5b10`, PEP-440
 local-version `+hood.N`). Bump `hood.N` whenever fork changes ship.
 
 Living catalogue of why this fork diverges from upstream
@@ -25,7 +25,7 @@ Changes are kept hood-scoped where possible so other appliance classes aren't af
   `Command` / `Program` objects on a `HomeAppliance`.
 - Each platform (`switch`, `light`, `fan`, `number`, `select`, `button`, `sensor`,
   `binary_sensor`) is declared by entity descriptions in
-  `custom_components/homeconnect_ws/entity_descriptions/`. A descriptor references one
+  `custom_components/homeconnect_ws_fork/entity_descriptions/`. A descriptor references one
   or more `Entity` *names*; if all referenced entities exist in the parsed profile, an
   HA entity is created.
 - Writes go over the WebSocket as `POST /ro/values` (entity value writes),
@@ -376,6 +376,23 @@ began with exactly that on/off burst.
   in-flight on.
 - A failed write rolls the pending state back, unless a newer command has already
   replaced it.
+
+### 15. Own domain `homeconnect_ws_fork`
+
+**Files:** `custom_components/homeconnect_ws_fork/` (renamed folder), `const.py`,
+`manifest.json`, `services.yaml`, `pyproject.toml`, tests, release workflow, README
+
+**Problem:** With the upstream domain `homeconnect_ws`, both repos install into
+`custom_components/homeconnect_ws`. The HA Marketplace (HACS) tracks ownership by that
+folder, so it treated the fork and upstream as the same install: both showed as
+installed, and upstream could not be uninstalled without deleting the config entries.
+
+**Fix:** The fork uses its own domain `homeconnect_ws_fork`, so it installs to its own
+folder and can sit next to (or replace) upstream without conflict.
+
+**Migration:** Config entries are bound to the domain and do not carry over. Each
+appliance has to be added again from the profile file, and entity IDs that were
+customized must be renamed back by hand.
 
 ## Open items / not yet done
 

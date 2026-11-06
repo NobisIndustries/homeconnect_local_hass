@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from custom_components.homeconnect_ws.helpers import merge_dicts
+from custom_components.homeconnect_ws_fork.helpers import merge_dicts
 
 from .common import COMMON_ENTITY_DESCRIPTIONS
 from .consumer_products import CONSUMER_PRODUCTS_ENTITY_DESCRIPTIONS

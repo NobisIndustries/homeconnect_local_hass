@@ -5,18 +5,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
-from custom_components.homeconnect_ws import entity_descriptions
-from custom_components.homeconnect_ws.entity_descriptions import (
+from custom_components.homeconnect_ws_fork import entity_descriptions
+from custom_components.homeconnect_ws_fork.entity_descriptions import (
     HCBinarySensorEntityDescription,
     HCSelectEntityDescription,
     HCSensorEntityDescription,
     HCSwitchEntityDescription,
 )
-from custom_components.homeconnect_ws.entity_descriptions.common import (
+from custom_components.homeconnect_ws_fork.entity_descriptions.common import (
     generate_power_switch,
     generate_program,
 )
-from custom_components.homeconnect_ws.helpers import merge_dicts
+from custom_components.homeconnect_ws_fork.helpers import merge_dicts
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.switch import SwitchDeviceClass
 from homeconnect_websocket.entities import Access, DeviceDescription, EntityDescription

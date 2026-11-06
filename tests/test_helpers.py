@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from custom_components.homeconnect_ws.helpers import (
+from custom_components.homeconnect_ws_fork.helpers import (
     EntityMatch,
     get_entities_from_regex,
     get_groups_from_regex,

@@ -1,6 +1,6 @@
 [project]
 version = "1.0.5b10"
-name = "homeconnect_ws"
+name = "homeconnect_ws_fork"
 authors = [{ name = "chris-mc1" }]
 description = "Home Connect Local for Homeassistant"
 readme = "README.md"
