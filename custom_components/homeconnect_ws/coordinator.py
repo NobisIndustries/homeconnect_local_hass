@@ -74,7 +74,14 @@ class HomeConnectCoordinator(DataUpdateCoordinator):
         await self.appliance.close()
 
     async def _async_setup(self) -> None:
-        self.config_entry.async_create_task(self.hass, self._connect())
+        # Background task: HA bootstrap doesn't wait for it, so an unreachable
+        # appliance can't block startup. Entities load as unavailable and the
+        # retry loop keeps running; the task is cancelled on entry unload.
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self._connect(),
+            name=f"homeconnect_ws connect {self.config_entry.data[CONF_HOST]}",
+        )
 
     async def _connect(self) -> None:
         self.logger.debug(
